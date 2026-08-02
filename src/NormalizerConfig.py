@@ -18,7 +18,7 @@ class NormalizerConfig(BaseModel):
     # Reject any keys in the input data that aren't explicitly defined below.
     # This catches typos or outdated config keys early, instead of silently
     # ignoring them.
-    model_config = ConfigDict(extra="forbid")
+    model_config            = ConfigDict(extra="forbid")
 
     # The spaCy / scispacy model name to load for tokenization and lemmatization.
     model_name: str         = "en_core_sci_sm"

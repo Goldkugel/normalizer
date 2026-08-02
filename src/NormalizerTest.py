@@ -8,8 +8,8 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from Normalizer import Normalizer
-from NormalizerConfig import NormalizerConfig
+from .Normalizer import Normalizer
+from .NormalizerConfig import NormalizerConfig
 
 # Ignore third-party spaCy regex union warnings in Python 3.10+
 warnings.filterwarnings(

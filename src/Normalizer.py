@@ -4,8 +4,8 @@ import sys
 sys.dont_write_bytecode = True
 
 from nltk.stem          import PorterStemmer
-from NormalizerConfig   import NormalizerConfig
-from Logger import Logger
+from .NormalizerConfig  import NormalizerConfig
+from logger             import Logger
 import nltk
 import scispacy
 import spacy
