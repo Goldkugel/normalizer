@@ -5,12 +5,13 @@ sys.dont_write_bytecode = True
 
 from nltk.stem          import PorterStemmer
 from NormalizerConfig   import NormalizerConfig
+from Logger import Logger
 import nltk
 import scispacy
 import spacy
 import yaml
 
-# Key under which model settings are expected to live in the YAML config file.
+# Key under which normalizer settings are expected to live in the YAML config file.
 configuration_section: str  = "normalizer"
 
 # Default path to the config file, used if no path is explicitly passed in.
@@ -25,16 +26,21 @@ class Normalizer:
     config: NormalizerConfig = None
 
     def __init__(self, config: str = standard_directory):
+        l = Logger()
         with open(config, "r") as f:
             data = yaml.safe_load(f)
         self.config = NormalizerConfig.model_validate(data[configuration_section])
 
+        l.log(f"Loading spacy model '{self.config.model_name}'...")
         # Load the specified spaCy / scispacy model
         self.nlp = spacy.load(self.config.model_name)
+        l.log(f"Loading spacy model '{self.config.model_name}' completed.")
 
         # Initialize stemmer only if stemming is explicitly enabled
         if self.config.stemming:
+            l.log("Loading stemmer...")
             self.stemmer = PorterStemmer()
+            l.log("Loading stemmer completed.")
 
     def normalize(self, text: str) -> list:
         """Normalizes an input string according to the configured options."""
