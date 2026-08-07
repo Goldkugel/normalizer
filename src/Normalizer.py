@@ -15,7 +15,7 @@ import yaml
 configuration_section: str  = "normalizer"
 
 # Default path to the config file, used if no path is explicitly passed in.
-standard_directory: str     = "../config/config.yaml"
+standard_directory: str     = "./config/config.yaml"
 
 class Normalizer:
     """Configurable lexical normalization pipeline for biomedical text.
