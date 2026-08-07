@@ -33,7 +33,7 @@ class Normalizer:
 
         l.log(f"Loading spacy model '{self.config.model_name}'...")
         # Load the specified spaCy / scispacy model
-        self.nlp = spacy.load(self.config.model_name)
+        self.nlp = spacy.load(self.config.model_name, exclude=["ner", "parser"])
         l.log(f"Loading spacy model '{self.config.model_name}' completed.")
 
         # Initialize stemmer only if stemming is explicitly enabled
@@ -41,6 +41,33 @@ class Normalizer:
             l.log("Loading stemmer...")
             self.stemmer = PorterStemmer()
             l.log("Loading stemmer completed.")
+
+    def normalize_batch(self, texts: list[str], batch_size: int = 256, n_process: int = 1) -> list[list[str]]:
+        """Normalizes many strings at once using spaCy's batched pipeline."""
+        if self.config.lower_case:
+            texts = [t.lower() if t else t for t in texts]
+
+        results: list[list[str]] = []
+        docs = self.nlp.pipe(
+            (t if t else "" for t in texts),
+            batch_size=batch_size,
+            n_process=n_process,
+        )
+        for doc in docs:
+            tokens: list[str] = []
+            for token in doc:
+                if token.is_punct or token.is_space:
+                    continue
+                if not token.is_alpha and len(token) <= 1:
+                    continue
+                if self.config.stop_word_removal and token.is_stop:
+                    continue
+                token_str = token.lemma_ if self.config.lemmatizing else token.text
+                if self.config.stemming:
+                    token_str = self.stemmer.stem(token_str)
+                tokens.append(token_str)
+            results.append(tokens)
+        return results
 
     def normalize(self, text: str) -> list:
         """Normalizes an input string according to the configured options."""
