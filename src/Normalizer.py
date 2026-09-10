@@ -42,10 +42,10 @@ class Normalizer:
             self.stemmer = PorterStemmer()
             l.log("Loading stemmer completed.")
 
-    def normalize_batch(self, texts: list[str], batch_size: int = 256, n_process: int = 1) -> list[list[str]]:
+    def normalize_batch(self, texts: list[str], batch_size: int = 256, n_process: int = 1) -> list[set[str]]:
         """Normalizes many strings at once using spaCy's batched pipeline."""
         if self.config.lower_case:
-            texts = [t.lower() if t else t for t in texts]
+            texts = [str(t).lower() if t else str(t) for t in texts]
 
         results: list[list[str]] = []
         docs = self.nlp.pipe(
@@ -66,10 +66,10 @@ class Normalizer:
                 if self.config.stemming:
                     token_str = self.stemmer.stem(token_str)
                 tokens.append(token_str)
-            results.append(tokens)
+            results.append(set(tokens))
         return results
 
-    def normalize(self, text: str) -> list:
+    def normalize(self, text: str) -> set:
         """Normalizes an input string according to the configured options."""
         if not text:
             return ""
@@ -106,4 +106,4 @@ class Normalizer:
 
             tokens.append(token_str)
 
-        return tokens
+        return set(tokens)
