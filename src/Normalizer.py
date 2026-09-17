@@ -45,9 +45,9 @@ class Normalizer:
     def normalize_batch(self, texts: list[str], batch_size: int = 256, n_process: int = 1) -> list[set[str]]:
         """Normalizes many strings at once using spaCy's batched pipeline."""
         if self.config.lower_case:
-            texts = [str(t).lower() if t else str(t) for t in texts]
+            texts = [str(t).lower() if t else "" for t in texts]
 
-        results: list[list[str]] = []
+        results: list[set[str]] = []
         docs = self.nlp.pipe(
             (t if t else "" for t in texts),
             batch_size=batch_size,
@@ -72,7 +72,7 @@ class Normalizer:
     def normalize(self, text: str) -> set:
         """Normalizes an input string according to the configured options."""
         if not text:
-            return ""
+            return set()
 
         # 1. Lowercasing
         if self.config.lower_case:

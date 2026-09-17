@@ -69,42 +69,42 @@ class TestDefaultPipelineBehavior:
     def test_normalizes_standard_medical_text(self, standard_normalizer):
         input_text = "Severe abnormalities of the kidneys"
         # "severe" -> "sever", "abnormality" -> "abnorm", "kidney" -> "kidney"
-        assert standard_normalizer.normalize(input_text) == [
+        assert standard_normalizer.normalize(input_text) == {
             "sever",
             "abnorm",
             "kidney",
-        ]
+        }
 
     def test_preserves_single_character_medical_terms(self, standard_normalizer):
-        assert standard_normalizer.normalize("Aspirin C") == ["aspirin", "c"]
-        assert standard_normalizer.normalize("Hepatitis C infection") == [
+        assert standard_normalizer.normalize("Aspirin C") == {"aspirin", "c"}
+        assert standard_normalizer.normalize("Hepatitis C infection") == {
             "hepat",
             "c",
             "infect",
-        ]
-        assert standard_normalizer.normalize("Vitamin D deficiency") == [
+        }
+        assert standard_normalizer.normalize("Vitamin D deficiency") == {
             "vitamin",
             "d",
             "defici",
-        ]
+        }
 
     def test_removes_punctuation_and_collapses_whitespace(self, standard_normalizer):
         input_text = "Kidney disease, chronic!"
-        assert standard_normalizer.normalize(input_text) == [
+        assert standard_normalizer.normalize(input_text) == {
             "kidney",
             "diseas",
             "chronic",
-        ]
+        }
 
         whitespace_text = "   Patients  were  suffering   "
-        assert standard_normalizer.normalize(whitespace_text) == [
+        assert standard_normalizer.normalize(whitespace_text) == {
             "patient",
             "suffer",
-        ]
+        }
 
     def test_handles_empty_or_whitespace_only_input(self, standard_normalizer):
-        assert standard_normalizer.normalize("") == ""
-        assert standard_normalizer.normalize("   ") == []
+        assert standard_normalizer.normalize("") == set()
+        assert standard_normalizer.normalize("   ") == set()
 
 
 class TestConfigFlagToggles:
@@ -132,7 +132,7 @@ class TestConfigFlagToggles:
 
         # "The" (stopword) is removed; "Kidneys" keeps initial capital letter
         result = normalizer.normalize("The Kidneys")
-        assert result == ["Kidneys"]
+        assert result == {"Kidneys"}
 
     def test_retains_raw_tokens_when_lemmatization_is_disabled(self, tmp_path):
         config_file = self._create_custom_config(
@@ -141,7 +141,7 @@ class TestConfigFlagToggles:
         normalizer = Normalizer(config=config_file)
 
         result = normalizer.normalize("abnormalities of kidneys")
-        assert result == ["abnormalities", "kidneys"]
+        assert result == {"abnormalities", "kidneys"}
 
     def test_retains_stopwords_when_stopword_removal_is_disabled(self, tmp_path):
         config_file = self._create_custom_config(
@@ -150,7 +150,7 @@ class TestConfigFlagToggles:
         normalizer = Normalizer(config=config_file)
 
         result = normalizer.normalize("Abnormality of the kidney")
-        assert result == ["abnormality", "of", "the", "kidney"]
+        assert result == {"abnormality", "of", "the", "kidney"}
 
     def test_disables_stemming_when_stemming_flag_is_false(self, tmp_path):
         config_file = self._create_custom_config(tmp_path, {"stemming": False})
@@ -158,7 +158,7 @@ class TestConfigFlagToggles:
 
         # Lemmatized without Porter Stemming ("abnormalities" -> "abnormality" instead of "abnorm")
         result = normalizer.normalize("abnormalities")
-        assert result == ["abnormality"]
+        assert result == {"abnormality"}
 
 
 class TestOntologyMatchingAlignment:
