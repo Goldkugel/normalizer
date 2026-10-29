@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "normalizer"
-version = "1.0.4"
+version = "1.0.5"
 requires-python = ">=3.9"
 dependencies = [
-    "logger @ git+https://github.com/Goldkugel/logger.git@v1.0.6",
+    "logger @ git+https://github.com/Goldkugel/logger.git@v1.1.0",
     "en_core_sci_sm @ https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_sm-0.5.4.tar.gz",
     "nltk>=3.6",
     "pydantic>=2",
