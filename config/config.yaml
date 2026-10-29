@@ -1,5 +1,6 @@
 # Read by the logger package, which Normalizer uses for its progress messages.
-# Required: the logger loads ./config/config.yaml and fails without this section.
+# Normalizer configures the logger from this section unless another module
+# has configured it already.
 logger:
   folder: "./data/logs/"
   file_name: "output.log"

@@ -28,13 +28,16 @@ Built on top of [scispacy](https://allenai.github.io/scispacy/) and [spaCy](http
 ├── data/
 │   └── logs/                # Log files written by the logger
 ├── src/
-│   ├── __init__.py          # Package entry point (exposes Normalizer)
+│   ├── __init__.py          # Package entry point (exposes Normalizer, NormalizerConfig)
 │   ├── NormalizerConfig.py  # Pydantic schema for config validation
 │   ├── Normalizer.py        # Core Normalizer pipeline
-│   ├── NormalizerTest.py    # Pytest test suite
 │   └── README.md            # Module overview
+├── tests/
+│   └── NormalizerTest.py    # Pytest test suite (not part of the installed package)
+├── .github/workflows/
+│   └── tests.yml            # CI: tests on Python 3.9, 3.11 and 3.12, ruff, mypy
 ├── LICENSE
-├── pyproject.toml           # Package metadata and dependencies
+├── pyproject.toml           # Package metadata, dependencies, ruff and mypy settings
 └── README.md
 
 ```
@@ -52,7 +55,7 @@ Ensure you have **Python 3.9+** installed.
 All dependencies, including the `en_core_sci_sm` scispacy model, are declared in `pyproject.toml`:
 
 ```bash
-pip install "normalizer @ git+https://github.com/Goldkugel/normalizer.git@v1.0.5"
+pip install "normalizer @ git+https://github.com/Goldkugel/normalizer.git@v1.0.6"
 ```
 
 For development, install from a local checkout together with the test dependencies:
@@ -116,27 +119,41 @@ print(normalizer.normalize_batch(["Kidney abnormalities", None]))
 # Output: [{'kidney', 'abnormality'}, set()]
 ```
 
-`Normalizer` logs through the shared `logger` package, which reads the `logger` section of `./config/config.yaml` relative to the working directory and appends to `./data/logs/output.log`. Run your code from the project root, where both exist; the logger does not create the log folder itself.
+`Normalizer` logs through the shared `logger` package. If no other module has configured the logger yet, `Normalizer` configures it from the `logger` section of the same config file; otherwise the existing logger configuration is kept. With the shipped config, log messages are appended to `./data/logs/output.log` (the folder is created if missing).
 
 ---
 
 ## Known Limitations
 
 * **Stop words are not domain-specific.** `stop_word_removal` uses spaCy's general English stop word list, which also contains words that carry meaning in clinical terms, e.g. negation (`no`, `not`, `without`), location (`back`, `front`, `side`, `above`, `below`) and numbers (`first`, `two`). For example, *Back pain* normalizes to `{'pain'}`.
-* **Logger configuration.** The `logger` package always reads `./config/config.yaml` relative to the working directory, independently of the path passed to `Normalizer`.
+* **Logger configuration.** The logger is a process-wide singleton, so only the first module that creates it decides its configuration. If `Normalizer` is created first and its config file has no `logger` section, the logger falls back to `./config/config.yaml` relative to the working directory.
 
 ---
 
 ## Running Tests
 
-The test suite is built with `pytest`. It writes its own temporary config and log folder, so it can be started from any directory. From the project root:
+The test suite in `tests/` is only meant for testing this repository and is not part of the installed package. It tests the installed `normalizer` package, so install it first (`pip install -e ".[test]"`), then run from the project root:
 
 ```bash
-pytest src/NormalizerTest.py -v
+pytest tests/NormalizerTest.py -v
 ```
 
 or, without calling pytest directly:
 
 ```bash
-python3 -m src.NormalizerTest
+python3 tests/NormalizerTest.py
 ```
+
+The tests write their own temporary config and log files and do not touch `config/config.yaml` or `data/logs/`.
+
+### Linting
+
+The code is checked with [ruff](https://docs.astral.sh/ruff/) and [mypy](https://mypy-lang.org/); both are configured in `pyproject.toml`:
+
+```bash
+pip install -e ".[lint]"
+ruff check .
+mypy
+```
+
+GitHub Actions runs the tests and both linters on every push and pull request (`.github/workflows/tests.yml`).

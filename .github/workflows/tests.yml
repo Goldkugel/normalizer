@@ -1,0 +1,68 @@
+# Runs the Normalizer test suite and the linters on every push and pull
+# request.
+#
+# The package is installed from the checkout (not in editable mode), so the
+# run also checks that pyproject.toml declares all runtime dependencies,
+# including the en_core_sci_sm model. The tests write their own temporary
+# config and log files, so they do not depend on the working directory.
+
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # Pinned instead of ubuntu-latest: actions/setup-python only provides
+    # Python builds per Ubuntu release, and Ubuntu 26.04 has none older than
+    # 3.10. Ubuntu 24.04 still provides 3.9, the minimum in pyproject.toml.
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest supported (requires-python), the version used by the
+        # pipeline (3.11) and the newest version spaCy 3.7 (required by
+        # en_core_sci_sm 0.5.4) provides builds for.
+        python-version: ["3.9", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package with test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[test]"
+
+      - name: Run tests
+        run: python -m pytest tests/NormalizerTest.py -v
+
+  lint:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # mypy needs the runtime dependencies to check the calls into spaCy
+      # and pydantic.
+      - name: Install package with lint dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[lint]"
+
+      - name: Ruff
+        run: ruff check .
+
+      - name: Mypy
+        run: mypy

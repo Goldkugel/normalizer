@@ -3,7 +3,7 @@
 [`config.yaml`](./config.yaml) contains two sections:
 
 - `normalizer` — every option of [`Normalizer`](../src/Normalizer.py), validated by [`NormalizerConfig`](../src/NormalizerConfig.py). Documented below.
-- `logger` — settings of the [`logger`](https://github.com/Goldkugel/logger) package, which `Normalizer` uses for its progress messages. The logger requires this section; see the logger's own documentation for its keys.
+- `logger` — settings of the [`logger`](https://github.com/Goldkugel/logger) package, which `Normalizer` uses for its progress messages. See the logger's own documentation for its keys.
 
 When the normalizer is used inside a larger project (e.g. `hpo_sct_mapper`), the `normalizer` section is copied into that project's `config/config.yaml` alongside the other modules' sections.
 
@@ -32,4 +32,4 @@ All keys are optional — omitted keys fall back to the defaults above, and an e
 
 `Normalizer(config=path)` reads the YAML file at `path` (default: `./config/config.yaml`) and validates the `normalizer` key against `NormalizerConfig`; a file without a `normalizer` section raises a `KeyError`. Other top-level sections in the same file are ignored by `Normalizer`.
 
-Note: the `logger` section is read by the `logger` package, which always loads `./config/config.yaml` relative to the working directory, regardless of the path passed to `Normalizer`.
+If the logger has not been configured yet (by another module of the calling pipeline), `Normalizer` configures it from the `logger` section of the same file. An existing logger configuration is kept. If the file has no `logger` section and the logger is not configured yet, the logger falls back to its default `./config/config.yaml` relative to the working directory.

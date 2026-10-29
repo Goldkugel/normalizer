@@ -8,13 +8,11 @@ matched regardless of word order, inflection or filler words, e.g. when
 aligning HPO labels with SNOMED CT descriptions.
 """
 
-import sys
-
-# Prevent Python from generating .pyc files (compiled bytecode files)
-sys.dont_write_bytecode = True
+from __future__ import annotations
 
 from collections.abc    import Iterable
 from nltk.stem          import PorterStemmer
+from spacy.language     import Language
 from spacy.tokens       import Doc
 from .NormalizerConfig  import NormalizerConfig
 from logger             import Logger
@@ -46,9 +44,15 @@ class Normalizer:
     """
 
     # The validated "normalizer" section of the config file.
-    config: NormalizerConfig = None
+    config: NormalizerConfig
 
-    def __init__(self, config: str = standard_directory):
+    # The loaded spaCy pipeline.
+    nlp: Language
+
+    # Only set when stemming is enabled.
+    stemmer: PorterStemmer
+
+    def __init__(self, config: str = standard_directory) -> None:
         """
         Load the configuration, the spaCy model and, if enabled, the stemmer.
 
@@ -58,6 +62,10 @@ class Normalizer:
             Path to the YAML configuration file. Defaults to
             ./config/config.yaml relative to the working directory.
 
+            If no other module has configured the Logger yet and the file
+            has a "logger" section, the Logger is configured from the same
+            file.
+
         Raises
         ------
         KeyError
@@ -65,14 +73,22 @@ class Normalizer:
         pydantic.ValidationError
             If the section contains an unknown key or an invalid value.
         """
-        # The Logger is a singleton that reads ./config/config.yaml on its
-        # own; it does not use the path passed to the Normalizer.
-        l = Logger()
-
         with open(config, "r", encoding="utf-8") as f:
             # An empty file is parsed as None; treat it like a file without
             # sections so the KeyError below explains what is missing.
             data = yaml.safe_load(f) or {}
+
+        # The Logger is a process-wide singleton. If it has not been
+        # configured yet, configure it from this file, so a custom config path
+        # also covers logging. If it already has a configuration (e.g. set by
+        # the calling pipeline), keep it; a bare Logger() call does not reload.
+        # Files without a "logger" section leave the Logger to its own default
+        # path (./config/config.yaml).
+        if Logger.config is None and "logger" in data:
+            log = Logger(config)
+        else:
+            log = Logger()
+
         if configuration_section not in data:
             raise KeyError(
                 f"Config file '{config}' has no '{configuration_section}' section."
@@ -80,21 +96,26 @@ class Normalizer:
         # An empty section ("normalizer:" with no keys) means "use all defaults".
         self.config = NormalizerConfig.model_validate(data[configuration_section] or {})
 
-        l.log(f"Loading spacy model '{self.config.model_name}'...")
+        log.log(f"Loading spacy model '{self.config.model_name}'...")
         # The named-entity recognizer and the dependency parser are not needed
         # for normalization, so they are not loaded, which saves loading and
         # processing time. The tagger stays, because the lemmatizer uses its
         # part-of-speech tags.
         self.nlp = spacy.load(self.config.model_name, exclude=["ner", "parser"])
-        l.log(f"Loading spacy model '{self.config.model_name}' completed.")
+        log.log(f"Loading spacy model '{self.config.model_name}' completed.")
 
         # Initialize stemmer only if stemming is explicitly enabled
         if self.config.stemming:
-            l.log("Loading stemmer...")
+            log.log("Loading stemmer...")
             self.stemmer = PorterStemmer()
-            l.log("Loading stemmer completed.")
+            log.log("Loading stemmer completed.")
 
-    def normalize_batch(self, texts: Iterable, batch_size: int = 256, n_process: int = 1) -> list[set[str]]:
+    def normalize_batch(
+        self,
+        texts: Iterable[object],
+        batch_size: int = 256,
+        n_process: int = 1,
+    ) -> list[set[str]]:
         """
         Normalize many terms at once using spaCy's batched pipeline.
 
@@ -103,7 +124,7 @@ class Normalizer:
 
         Parameters
         ----------
-        texts : Iterable
+        texts : Iterable[object]
             The terms to normalize. Missing values (None, NaN) are allowed
             and yield an empty set, like an empty string.
         batch_size : int, optional
@@ -125,15 +146,15 @@ class Normalizer:
         )
         return [self._tokens(doc) for doc in docs]
 
-    def normalize(self, text) -> set[str]:
+    def normalize(self, text: object) -> set[str]:
         """
         Normalize a single term according to the configured options.
 
         Parameters
         ----------
-        text : str
-            The term to normalize. None and NaN are allowed and yield an
-            empty set.
+        text : object
+            The term to normalize, normally a str. None and NaN are allowed
+            and yield an empty set; other values are converted with str().
 
         Returns
         -------
@@ -141,14 +162,14 @@ class Normalizer:
             The normalized tokens. A set is returned because matching is
             meant to ignore word order and repeated words.
         """
-        text = self._prepare(text)
+        prepared = self._prepare(text)
 
         # Nothing to tokenize; skip the spaCy call.
-        if not text:
+        if not prepared:
             return set()
-        return self._tokens(self.nlp(text))
+        return self._tokens(self.nlp(prepared))
 
-    def _prepare(self, text) -> str:
+    def _prepare(self, text: object) -> str:
         """Turns an input value into the string fed to spaCy.
 
         None and NaN (e.g. empty cells from a pandas column) become "" instead
@@ -157,13 +178,13 @@ class Normalizer:
         # numpy.float64 is a subclass of float, so NumPy/pandas NaN is caught too.
         if text is None or (isinstance(text, float) and math.isnan(text)):
             return ""
-        text = str(text)
+        result = str(text)
 
         # 1. Lowercasing (done before spaCy, so stop word lookup and
         #    lemmatization see the same form regardless of the input casing)
         if self.config.lower_case:
-            text = text.lower()
-        return text
+            result = result.lower()
+        return result
 
     def _tokens(self, doc: Doc) -> set[str]:
         """Applies the configured token filters and transformations to a doc."""

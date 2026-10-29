@@ -1,8 +1,4 @@
-import sys
-
-# Prevent Python from generating .pyc files (compiled bytecode files)
-sys.dont_write_bytecode = True
-
 from .Normalizer import Normalizer
+from .NormalizerConfig import NormalizerConfig
 
-__all__ = ["Normalizer"]
+__all__ = ["Normalizer", "NormalizerConfig"]

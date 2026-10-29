@@ -4,8 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "normalizer"
-version = "1.0.5"
+version = "1.0.6"
 requires-python = ">=3.9"
+# en_core_sci_sm 0.5.4 is built for spaCy 3.7; the upper bound also keeps pip
+# from building newer spaCy versions from source on Python 3.9.
 dependencies = [
     "logger @ git+https://github.com/Goldkugel/logger.git@v1.1.0",
     "en_core_sci_sm @ https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_sm-0.5.4.tar.gz",
@@ -13,14 +15,41 @@ dependencies = [
     "pydantic>=2",
     "pyyaml",
     "scispacy>=0.5.4",
-    "spacy>=3.7"
+    "spacy>=3.7,<3.8"
 ]
 
 [project.optional-dependencies]
 test = ["pytest"]
+lint = ["mypy", "ruff", "types-PyYAML"]
 
 [tool.setuptools]
 packages = ["normalizer"]
 
 [tool.setuptools.package-dir]
 "normalizer" = "src"
+
+# Linting: pyflakes/pycodestyle errors plus common bug patterns. Style rules
+# that conflict with the project's conventions (CamelCase module names,
+# column-aligned imports and assignments) are not selected.
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]
+
+[tool.mypy]
+files = ["src"]
+
+# nltk and logger ship without type information.
+[[tool.mypy.overrides]]
+module = ["nltk.*", "logger.*"]
+ignore_missing_imports = true
+
+# Third-party warnings raised inside spaCy, not by this package: its tokenizer
+# regexes ("Possible set union", Python 3.10+) and its use of a deprecated
+# click function.
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:Possible set union:FutureWarning",
+    "ignore:Importing 'parser.split_arg_string' is deprecated:DeprecationWarning",
+]

@@ -1,45 +1,47 @@
 """
 Pytest suite for the Normalizer and its configuration schema.
 
-Run from the project root with `pytest src/NormalizerTest.py -v` or
-`python3 -m src.NormalizerTest`. Requires the en_core_sci_sm model.
+Tests the installed `normalizer` package (`pip install -e ".[test]"`), which
+also provides the en_core_sci_sm model. Run with:
+
+    pytest tests/NormalizerTest.py -v
+
+The tests write their own temporary config and log files, so they can be
+started from any directory.
 """
 
-import sys
-
-# Prevent Python from generating .pyc files (compiled bytecode files)
-sys.dont_write_bytecode = True
-
 import math
-import os
-import warnings
+import sys
 import pytest
 import yaml
 from pydantic import ValidationError
 
-from .Normalizer import Normalizer
-from .NormalizerConfig import NormalizerConfig
-
-# Ignore third-party spaCy regex union warnings in Python 3.10+
-warnings.filterwarnings(
-    "ignore", category=FutureWarning, module="spacy.language"
-)
+from logger import Logger
+from normalizer import Normalizer, NormalizerConfig
 
 # --- Fixtures -------------------------------------------------------------
+def _reset_logger():
+    """Forget the Logger singleton and its configuration, so the next
+    Logger() call starts from scratch."""
+    Logger._instance  = None
+    Logger.config     = None
+    Logger.start_time = 0
+
+
 @pytest.fixture(scope="module", autouse=True)
 def standard_config_path(tmp_path_factory):
-    """Writes a temporary ./config/config.yaml, switches into its directory
-    and returns the file path.
+    """Writes a temporary config file with a logger and a normalizer section
+    and returns its path.
 
-    The Logger always reads ./config/config.yaml relative to the working
-    directory, so this keeps the tests independent of where pytest is started
-    and keeps test logs out of the repository.
+    The Logger is reset and configured from this file, so test logs end up
+    in the temporary folder instead of the repository, whichever test runs
+    first.
 
     Unlike the shipped config/config.yaml, the test config enables stemming,
     so the shared normalizer exercises every pipeline step at once. Tests that
     need other settings write their own file (see TestConfigFlagToggles).
     """
-    tmp_dir = tmp_path_factory.mktemp("workdir")
+    tmp_dir = tmp_path_factory.mktemp("config")
     config_data = {
         "logger": {
             "folder": str(tmp_dir / "logs") + "/",
@@ -53,17 +55,14 @@ def standard_config_path(tmp_path_factory):
             "stop_word_removal": True,
         },
     }
-    # The Logger appends to its file but does not create the folder.
-    (tmp_dir / "logs").mkdir()
-    (tmp_dir / "config").mkdir()
-    config_file = tmp_dir / "config" / "config.yaml"
+    config_file = tmp_dir / "config.yaml"
     with open(config_file, "w") as f:
         yaml.safe_dump(config_data, f)
 
-    previous_cwd = os.getcwd()
-    os.chdir(tmp_dir)
+    _reset_logger()
+    Logger(str(config_file))
     yield str(config_file)
-    os.chdir(previous_cwd)
+    _reset_logger()
 
 
 @pytest.fixture(scope="module")
@@ -173,8 +172,8 @@ class TestConfigFlagToggles:
         """Writes a normalizer config with all steps enabled, changed by
         `overrides`, to a temporary file and returns its path.
 
-        The file has no logger section; the Logger keeps reading the
-        ./config/config.yaml written by the module fixture.
+        The file has no logger section; the Logger keeps the configuration
+        it got from the module fixture's file.
         """
         base_config = {
             "model_name": "en_core_sci_sm",
@@ -246,6 +245,29 @@ class TestConfigFlagToggles:
         config_path.write_text("other: {}\n")
         with pytest.raises(KeyError, match="normalizer"):
             Normalizer(config=str(config_path))
+
+
+class TestLoggerConfiguration:
+
+    def test_unconfigured_logger_is_configured_from_the_normalizer_config(
+        self, standard_config_path
+    ):
+        # Start without a Logger configuration, as in a fresh process
+        _reset_logger()
+        Normalizer(config=standard_config_path)
+
+        with open(standard_config_path) as f:
+            expected = yaml.safe_load(f)["logger"]["folder"]
+        assert Logger.config.folder == expected
+
+    def test_existing_logger_configuration_is_kept(self, tmp_path, standard_normalizer):
+        other_config = tmp_path / "other.yaml"
+        other_config.write_text(
+            "logger:\n  folder: \"/should/not/be/used/\"\nnormalizer: {}\n"
+        )
+        folder_before = Logger.config.folder
+        Normalizer(config=str(other_config))
+        assert Logger.config.folder == folder_before
 
 
 class TestOntologyMatchingAlignment:
