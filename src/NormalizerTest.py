@@ -1,8 +1,17 @@
+"""
+Pytest suite for the Normalizer and its configuration schema.
+
+Run from the project root with `pytest src/NormalizerTest.py -v` or
+`python3 -m src.NormalizerTest`. Requires the en_core_sci_sm model.
+"""
+
 import sys
 
 # Prevent Python from generating .pyc files (compiled bytecode files)
 sys.dont_write_bytecode = True
 
+import math
+import os
 import warnings
 import pytest
 import yaml
@@ -17,33 +26,50 @@ warnings.filterwarnings(
 )
 
 # --- Fixtures -------------------------------------------------------------
-@pytest.fixture(scope="module")
+@pytest.fixture(scope="module", autouse=True)
 def standard_config_path(tmp_path_factory):
-    """Writes a temporary YAML config file containing your project's standard
+    """Writes a temporary ./config/config.yaml, switches into its directory
+    and returns the file path.
 
-    configuration settings and returns its file path.
+    The Logger always reads ./config/config.yaml relative to the working
+    directory, so this keeps the tests independent of where pytest is started
+    and keeps test logs out of the repository.
+
+    Unlike the shipped config/config.yaml, the test config enables stemming,
+    so the shared normalizer exercises every pipeline step at once. Tests that
+    need other settings write their own file (see TestConfigFlagToggles).
     """
+    tmp_dir = tmp_path_factory.mktemp("workdir")
     config_data = {
+        "logger": {
+            "folder": str(tmp_dir / "logs") + "/",
+            "file_name": "test.log",
+        },
         "normalizer": {
             "model_name": "en_core_sci_sm",
             "lower_case": True,
             "lemmatizing": True,
             "stemming": True,
             "stop_word_removal": True,
-        }
+        },
     }
-    tmp_dir = tmp_path_factory.mktemp("config")
-    config_file = tmp_dir / "config.yaml"
+    # The Logger appends to its file but does not create the folder.
+    (tmp_dir / "logs").mkdir()
+    (tmp_dir / "config").mkdir()
+    config_file = tmp_dir / "config" / "config.yaml"
     with open(config_file, "w") as f:
         yaml.safe_dump(config_data, f)
-    return str(config_file)
+
+    previous_cwd = os.getcwd()
+    os.chdir(tmp_dir)
+    yield str(config_file)
+    os.chdir(previous_cwd)
 
 
 @pytest.fixture(scope="module")
 def standard_normalizer(standard_config_path):
-    """Provides a shared instance of Normalizer loaded with the standard config
-
-    to avoid re-loading the spaCy model across multiple test methods.
+    """Provides a shared Normalizer loaded with the test config (all steps
+    enabled), to avoid re-loading the spaCy model in every test.
     """
     return Normalizer(config=standard_config_path)
 
@@ -64,6 +90,7 @@ class TestNormalizerConfig:
             NormalizerConfig(invalid_param=123)  # type: ignore
 
 
+# All tests in this class use the shared normalizer, i.e. with stemming.
 class TestDefaultPipelineBehavior:
 
     def test_normalizes_standard_medical_text(self, standard_normalizer):
@@ -106,11 +133,49 @@ class TestDefaultPipelineBehavior:
         assert standard_normalizer.normalize("") == set()
         assert standard_normalizer.normalize("   ") == set()
 
+    def test_preserves_single_digit_tokens(self, standard_normalizer):
+        type_1 = standard_normalizer.normalize("Type 1 diabetes mellitus")
+        type_2 = standard_normalizer.normalize("Type 2 diabetes mellitus")
+        assert "1" in type_1
+        assert "2" in type_2
+        assert type_1 != type_2
+
+    def test_treats_missing_values_as_empty_input(self, standard_normalizer):
+        assert standard_normalizer.normalize(None) == set()
+        assert standard_normalizer.normalize(math.nan) == set()
+
+
+class TestBatchNormalization:
+
+    def test_batch_matches_single_normalization(self, standard_normalizer):
+        texts = [
+            "Severe abnormalities of the kidneys",
+            "Hepatitis C infection",
+            "Type 1 diabetes mellitus",
+            "",
+        ]
+        assert standard_normalizer.normalize_batch(texts) == [
+            standard_normalizer.normalize(t) for t in texts
+        ]
+
+    def test_batch_treats_missing_values_as_empty_input(self, standard_normalizer):
+        # Empty pandas cells arrive as NaN floats; they must not become "nan"
+        assert standard_normalizer.normalize_batch([None, math.nan, "kidney"]) == [
+            set(),
+            set(),
+            {"kidney"},
+        ]
+
 
 class TestConfigFlagToggles:
 
     def _create_custom_config(self, tmp_path, overrides: dict) -> str:
-        """Helper to dump custom normalizer config flags into a temporary file."""
+        """Writes a normalizer config with all steps enabled, changed by
+        `overrides`, to a temporary file and returns its path.
+
+        The file has no logger section; the Logger keeps reading the
+        ./config/config.yaml written by the module fixture.
+        """
         base_config = {
             "model_name": "en_core_sci_sm",
             "lower_case": True,
@@ -160,6 +225,28 @@ class TestConfigFlagToggles:
         result = normalizer.normalize("abnormalities")
         assert result == {"abnormality"}
 
+    def test_stemming_preserves_casing_when_lowercasing_is_disabled(self, tmp_path):
+        config_file = self._create_custom_config(
+            tmp_path, {"lower_case": False, "lemmatizing": False}
+        )
+        normalizer = Normalizer(config=config_file)
+
+        # PorterStemmer lowercases by default; the configured casing must win
+        result = normalizer.normalize("Kidneys")
+        assert result == {"Kidney"}
+
+    def test_empty_section_falls_back_to_defaults(self, tmp_path):
+        config_path = tmp_path / "empty_section.yaml"
+        config_path.write_text("normalizer:\n")
+        normalizer = Normalizer(config=str(config_path))
+        assert normalizer.config == NormalizerConfig()
+
+    def test_missing_section_raises_key_error(self, tmp_path):
+        config_path = tmp_path / "no_section.yaml"
+        config_path.write_text("other: {}\n")
+        with pytest.raises(KeyError, match="normalizer"):
+            Normalizer(config=str(config_path))
+
 
 class TestOntologyMatchingAlignment:
 
@@ -172,7 +259,8 @@ class TestOntologyMatchingAlignment:
         tokens_hpo = standard_normalizer.normalize(hpo_label)
         tokens_snomed = standard_normalizer.normalize(snomed_description)
 
-        # Set equality verifies semantic token alignment regardless of original word order
+        # Both terms reduce to the same token set, so they match despite
+        # different word order, inflection and the stop word "of the"
         assert set(tokens_hpo) == set(tokens_snomed)
 
 
