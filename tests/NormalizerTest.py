@@ -195,7 +195,9 @@ class TestConfigFlagToggles:
         )
         normalizer = Normalizer(config=config_file)
 
-        # "The" (stopword) is removed; "Kidneys" keeps initial capital letter
+        # "The" is removed (stop word lookup ignores the casing); "Kidneys"
+        # keeps its capital letter and, tagged as a proper noun, also its
+        # plural form, although lemmatization is enabled
         result = normalizer.normalize("The Kidneys")
         assert result == {"Kidneys"}
 
@@ -221,7 +223,8 @@ class TestConfigFlagToggles:
         config_file = self._create_custom_config(tmp_path, {"stemming": False})
         normalizer = Normalizer(config=config_file)
 
-        # Lemmatized without Porter Stemming ("abnormalities" -> "abnormality" instead of "abnorm")
+        # Lemmatized without Porter stemming ("abnormalities" -> "abnormality"
+        # instead of "abnorm")
         result = normalizer.normalize("abnormalities")
         assert result == {"abnormality"}
 
@@ -263,6 +266,8 @@ class TestConfigSources:
         assert normalizer.normalize("Kidneys") == {"Kidneys"}
 
     def test_accepts_a_full_configuration_dict(self):
+        # The Logger is already configured by the module fixture, so the
+        # dict's logger section is ignored and no folder is created there
         normalizer = Normalizer(config={
             "logger"    : {"folder": "/should/not/be/used/"},
             "normalizer": {"stemming": False},
@@ -362,8 +367,8 @@ class TestOntologyMatchingAlignment:
         tokens_snomed = standard_normalizer.normalize(snomed_description)
 
         # Both terms reduce to the same token set, so they match despite
-        # different word order, inflection and the stop word "of the"
-        assert set(tokens_hpo) == set(tokens_snomed)
+        # different word order, inflection and the stop words "of the"
+        assert tokens_hpo == tokens_snomed
 
 
 if __name__ == "__main__":

@@ -21,7 +21,7 @@ normalizer:
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `model_name` | `str` | `"en_core_sci_sm"` | spaCy/scispacy model to load for tokenization and lemmatization. |
-| `lower_case` | `bool` | `True` | Convert input text to lowercase before tokenization. |
+| `lower_case` | `bool` | `True` | Convert input text to lowercase before tokenization. Without it, capitalized words are often tagged as proper nouns and keep their form (`Kidneys` is not lemmatized to `Kidney`). |
 | `lemmatizing` | `bool` | `True` | Reduce tokens to their POS-guided lemma instead of keeping raw text. |
 | `stemming` | `bool` | `False` | Apply an NLTK `PorterStemmer` on top of the (lemmatized or raw) token. Only loaded/applied when set to `True`. Keeps the casing when `lower_case` is `False`. |
 | `stop_word_removal` | `bool` | `True` | Drop tokens spaCy marks as stop words. This is spaCy's general English list, so it also removes words such as `no`, `not`, `without` and `back`. |
@@ -30,6 +30,6 @@ All keys are optional — omitted keys fall back to the defaults above, and an e
 
 ## Loading
 
-`Normalizer(config=path)` reads the YAML file at `path` (default: `./config/config.yaml`) and validates the `normalizer` key against `NormalizerConfig`; a file without a `normalizer` section raises a `KeyError`. Other top-level sections in the same file are ignored by `Normalizer`.
+`Normalizer(config=path)` reads the YAML file at `path` (default: `./config/config.yaml`) and validates the `normalizer` key against `NormalizerConfig`; a file without a `normalizer` section raises a `KeyError`. Other top-level sections in the same file are ignored by `Normalizer`. Instead of a path, the same settings can be passed as a dict or a `NormalizerConfig` (see [Configuration sources](../README.md#configuration-sources)).
 
 If the logger has not been configured yet (by another module of the calling pipeline), `Normalizer` configures it from the `logger` section of the same file. An existing logger configuration is kept. If the file has no `logger` section and the logger is not configured yet, the logger falls back to its default `./config/config.yaml` relative to the working directory, or to its built-in defaults if that file does not exist.

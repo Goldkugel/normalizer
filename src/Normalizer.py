@@ -27,7 +27,8 @@ configuration_section: str  = "normalizer"
 # Key of the logger settings in the same file (see the logger package).
 logger_section: str         = "logger"
 
-# Default path to the config file, used if no path is explicitly passed in.
+# Default path to the config file, used if no config is passed in. It is also
+# the Logger's own default path, which it loads if it is not configured yet.
 standard_directory: str     = "./config/config.yaml"
 
 class Normalizer:
@@ -44,7 +45,8 @@ class Normalizer:
     3. Lemmatization                     (_tokens)
     4. Stemming                          (_tokens)
 
-    Punctuation, whitespace and pure symbol tokens are always dropped.
+    Punctuation, whitespace and pure symbol tokens are always dropped, and
+    the remaining tokens are collected in a set (no order, no duplicates).
     """
 
     # The validated "normalizer" section of the config file.
@@ -72,32 +74,42 @@ class Normalizer:
             - a dict, either the content of such a file (with "normalizer"
               and optionally "logger" keys) or just the normalizer settings
               themselves;
-            - a ready NormalizerConfig, which is used as is.
+            - a NormalizerConfig, of which a copy is stored.
 
             If no other module has configured the Logger yet, it is
             configured from the same source: the "logger" section of the
-            file, or the "logger" key of a full configuration dict.
+            file, or the "logger" key of a full configuration dict. Sources
+            without logger settings leave the Logger to ./config/config.yaml
+            if that file exists, and to its built-in defaults otherwise.
 
         Raises
         ------
         FileNotFoundError
             If the configuration file does not exist.
         KeyError
-            If the file has no "normalizer" section.
+            If the file has no "normalizer" section, or if the Logger falls
+            back to an existing ./config/config.yaml without a "logger"
+            section.
         pydantic.ValidationError
-            If the settings contain an unknown key or an invalid value.
+            If the normalizer or logger settings contain an unknown key or
+            an invalid value.
+        OSError
+            If the spaCy model named in the settings is not installed.
         """
         self.config, logger_path, logger_settings = Normalizer._resolveConfig(config)
 
-        # The Logger is a process-wide singleton. If it has not been
-        # configured yet, configure it from the same source as the
-        # normalizer, so a custom config also covers logging. If it already
-        # has a configuration (e.g. set by the calling pipeline), keep it; a
-        # bare Logger() call does not reload. Sources without logger
-        # settings leave the Logger to its own default path
-        # (./config/config.yaml) if that file exists, and to the LoggerConfig
-        # defaults otherwise, so the normalizer also works outside a project
-        # directory.
+        # The Logger is a process-wide singleton. If it already has a
+        # configuration (e.g. set by the calling pipeline), it is kept: a
+        # bare Logger() call does not reload. Otherwise it is configured
+        # from the same source as the normalizer, so a custom config also
+        # covers logging:
+        # - a config file with a "logger" section: Logger loads that file;
+        # - a full configuration dict with a "logger" key: its settings are
+        #   validated here, since Logger v1.1.0 only accepts file paths;
+        # - no logger settings: Logger() loads its default path
+        #   (./config/config.yaml) if that file exists; otherwise the
+        #   LoggerConfig defaults are set, so the normalizer also works
+        #   outside a project directory.
         if Logger.config is None and logger_path is not None:
             log = Logger(logger_path)
         else:
@@ -115,7 +127,8 @@ class Normalizer:
         self.nlp = spacy.load(self.config.model_name, exclude=["ner", "parser"])
         log.log(f"Loading spacy model '{self.config.model_name}' completed.")
 
-        # Initialize stemmer only if stemming is explicitly enabled
+        # Initialize the stemmer only if stemming is enabled; otherwise the
+        # `stemmer` attribute is not set and never used.
         if self.config.stemming:
             log.log("Loading stemmer...")
             self.stemmer = PorterStemmer()
@@ -131,7 +144,7 @@ class Normalizer:
         Returns the NormalizerConfig, the YAML file it came from if that
         file has a "logger" section (or None), and the "logger" section of a
         full configuration dict (or None), so __init__ can configure the
-        Logger from the same source.
+        Logger from the same source. At most one of the last two is set.
         """
         # Copy a given NormalizerConfig so later changes by the caller do
         # not silently change the normalizer's configuration.
@@ -199,6 +212,10 @@ class Normalizer:
         list[set[str]]
             One token set per input term, in input order.
         """
+        # The generator prepares each term only when spaCy reads it, so the
+        # input is not copied. Unlike normalize(), empty strings are not
+        # skipped here: spaCy has to yield one doc per input to keep the
+        # results in input order, and an empty doc gives an empty set.
         docs = self.nlp.pipe(
             (self._prepare(t) for t in texts),
             batch_size=batch_size,
@@ -230,7 +247,7 @@ class Normalizer:
         return self._tokens(self.nlp(prepared))
 
     def _prepare(self, text: object) -> str:
-        """Turns an input value into the string fed to spaCy.
+        """Turn an input value into the string fed to spaCy.
 
         None and NaN (e.g. empty cells from a pandas column) become "" instead
         of the literal token "nan"; other non-strings are converted with str().
@@ -240,18 +257,20 @@ class Normalizer:
             return ""
         result = str(text)
 
-        # 1. Lowercasing (done before spaCy, so stop word lookup and
-        #    lemmatization see the same form regardless of the input casing)
+        # 1. Lowercasing. Done before spaCy, because the tagger often tags
+        #    capitalized words as proper nouns, which the lemmatizer keeps
+        #    unchanged ("Kidneys" stays "Kidneys", "kidneys" becomes
+        #    "kidney"). Stop word lookup ignores the casing either way.
         if self.config.lower_case:
             result = result.lower()
         return result
 
     def _tokens(self, doc: Doc) -> set[str]:
-        """Applies the configured token filters and transformations to a doc."""
+        """Apply the configured token filters and transformations to a doc."""
         tokens: set[str] = set()
 
         for token in doc:
-            # Skip punctuation and whitespace
+            # Skip punctuation and whitespace tokens
             if token.is_punct or token.is_space:
                 continue
 
@@ -266,10 +285,12 @@ class Normalizer:
             if self.config.stop_word_removal and token.is_stop:
                 continue
 
-            # 3. Lemmatization vs Raw Text
+            # 3. Lemmatization: the POS-guided lemma, or the token text as is
             token_str = token.lemma_ if self.config.lemmatizing else token.text
 
-            # 4. Optional Stemming (PorterStemmer lowercases unless told not to)
+            # 4. Stemming, applied to the result of step 3. PorterStemmer
+            #    lowercases by default; to_lowercase keeps the configured
+            #    casing when lower_case is False.
             if self.config.stemming:
                 token_str = self.stemmer.stem(
                     token_str, to_lowercase=self.config.lower_case

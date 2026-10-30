@@ -1,3 +1,10 @@
+"""
+Pydantic model for the settings of the Normalizer.
+
+Validates the "normalizer" section of the YAML config file, or the
+equivalent dict, before the Normalizer loads its spaCy model.
+"""
+
 from pydantic import BaseModel, ConfigDict
 
 class NormalizerConfig(BaseModel):
@@ -14,7 +21,8 @@ class NormalizerConfig(BaseModel):
     model_config            = ConfigDict(extra="forbid")
 
     # The spaCy / scispacy model name to load for tokenization and lemmatization.
-    # The model must be installed as a Python package (see pyproject.toml).
+    # The model must be installed as a Python package; only the default,
+    # en_core_sci_sm, is a dependency of this package (see pyproject.toml).
     model_name: str         = "en_core_sci_sm"
 
     # Convert all input text to lowercase before further processing. Also

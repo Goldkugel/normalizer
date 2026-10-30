@@ -13,7 +13,7 @@ Built on top of [scispacy](https://allenai.github.io/scispacy/) and [spaCy](http
 * **Biomedical Tokenization:** Powered by `scispacy` (`en_core_sci_sm`) trained on scientific literature.
 * **Single-Character Term Preservation:** Retains single-letter and single-digit tokens (*Hepatitis C*, *Vitamin D*, *Type 1 diabetes*) that general-purpose pipelines often discard as noise, so e.g. *Type 1* and *Type 2 diabetes* stay distinguishable.
 * **Missing-Value Safe:** `None` and `NaN` (e.g. empty pandas cells) normalize to an empty set instead of a spurious `"nan"` token.
-* **Configurable Pipeline:** Easily toggle pipeline stages (lowercasing, stopword removal, lemmatization, stemming) via a YAML configuration file validated by **Pydantic**.
+* **Configurable Pipeline:** Easily toggle pipeline stages (lowercasing, stopword removal, lemmatization, stemming) via a YAML configuration file, a dict or a `NormalizerConfig`, all validated by **Pydantic**.
 * **Ontology Alignment Ready:** Normalizes variant labels into comparable token representations for exact and set-based entity matching across ontologies like HPO and SNOMED CT.
 
 ---
@@ -68,7 +68,7 @@ pip install -e ".[test]"
 
 ## Configuration
 
-The pipeline behavior is controlled via a YAML file (`config/config.yaml`). The schema is strictly validated using Pydantic (`NormalizerConfig`).
+The pipeline behavior is controlled via a YAML file (`config/config.yaml`) or the equivalent settings passed in code (see [Configuration sources](#configuration-sources)). The schema is strictly validated using Pydantic (`NormalizerConfig`): unknown keys raise a `ValidationError`, and omitted keys use the defaults below.
 
 ### Standard Configuration (`config/config.yaml`)
 
@@ -85,7 +85,7 @@ normalizer:
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
 | `model_name` | `str` | `"en_core_sci_sm"` | spaCy/scispacy model to load for tokenization & lemmatization. |
-| `lower_case` | `bool` | `True` | Convert all input text to lower case. |
+| `lower_case` | `bool` | `True` | Convert all input text to lower case before tokenization (capitalized words are otherwise often tagged as proper nouns and not lemmatized). |
 | `lemmatizing` | `bool` | `True` | Apply POS-guided lemmatization to base form. |
 | `stemming` | `bool` | `False` | Apply NLTK Porter Stemmer to tokens (respects `lower_case`). |
 | `stop_word_removal` | `bool` | `True` | Remove words on spaCy's general English stop word list (see [Known Limitations](#known-limitations)). |
