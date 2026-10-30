@@ -111,6 +111,29 @@ class TestNormalizerConfig:
         with pytest.raises(ValidationError):
             NormalizerConfig(stemming=value)
 
+    def test_stop_word_lists_default_to_empty(self):
+        config = NormalizerConfig()
+        assert config.keep_stop_words  == frozenset()
+        assert config.extra_stop_words == frozenset()
+
+    def test_stop_word_lists_are_lowercased_frozensets(self):
+        config = NormalizerConfig(keep_stop_words=["No", "BACK", "no"])
+        assert config.keep_stop_words == frozenset({"no", "back"})
+
+    @pytest.mark.parametrize("entry", ["", "of the", "back\tpain"])
+    def test_stop_word_entries_must_be_single_words(self, entry):
+        # Tokens are single words, so such entries could never match
+        with pytest.raises(ValidationError, match="single words"):
+            NormalizerConfig(extra_stop_words=[entry])
+
+    def test_stop_word_lists_must_not_overlap(self):
+        with pytest.raises(ValidationError, match="both"):
+            NormalizerConfig(keep_stop_words=["no"], extra_stop_words=["NO"])
+
+    def test_stop_word_list_must_be_a_list_not_a_string(self):
+        with pytest.raises(ValidationError):
+            NormalizerConfig(keep_stop_words="no")
+
     def test_config_is_read_only(self):
         config = NormalizerConfig()
         with pytest.raises(ValidationError):
@@ -240,6 +263,64 @@ class TestDefaultPipelineBehavior:
         # this test fails, the limitation is gone and the docs need updating.
         assert standard_normalizer.normalize("No fever") == {"fever"}
         assert standard_normalizer.normalize("Back pain") == {"pain"}
+
+
+@pytest.fixture(scope="module")
+def stop_word_normalizer(standard_config_path):
+    """A Normalizer without stemming whose stop word list keeps negation and
+    location words and also removes "abnormality"."""
+    return Normalizer(config={
+        "stemming"        : False,
+        "keep_stop_words" : ["no", "not", "without", "back"],
+        "extra_stop_words": ["abnormality"],
+    })
+
+
+class TestStopWordLists:
+
+    def test_keeps_listed_stop_words(self, stop_word_normalizer):
+        assert stop_word_normalizer.normalize("No fever") == {"no", "fever"}
+        assert stop_word_normalizer.normalize("Back pain") == {"back", "pain"}
+        assert stop_word_normalizer.normalize("Fever without rash") == {
+            "fever",
+            "without",
+            "rash",
+        }
+
+    def test_kept_words_also_match_by_lemma(self, stop_word_normalizer):
+        # "n't" is lemmatized to "not", which is on the keep list
+        assert stop_word_normalizer.normalize("Doesn't respond") == {"not", "respond"}
+
+    def test_other_stop_words_are_still_removed(self, stop_word_normalizer):
+        assert stop_word_normalizer.normalize("Pain of the back") == {"pain", "back"}
+
+    def test_removes_extra_stop_words_in_any_word_form(self, stop_word_normalizer):
+        # "abnormalities" matches the extra stop word "abnormality" by its lemma
+        assert stop_word_normalizer.normalize("Abnormality of the kidney") == {"kidney"}
+        assert stop_word_normalizer.normalize("Kidney abnormalities") == {"kidney"}
+
+    def test_lists_match_regardless_of_casing(self):
+        normalizer = Normalizer(config={
+            "lower_case"      : False,
+            "lemmatizing"     : False,
+            "keep_stop_words" : ["no"],
+            "extra_stop_words": ["kidney"],
+        })
+        assert normalizer.normalize("No fever") == {"No", "fever"}
+        assert normalizer.normalize("Kidney cyst") == {"cyst"}
+
+    def test_lists_are_ignored_without_stop_word_removal(self):
+        normalizer = Normalizer(config={
+            "stop_word_removal": False,
+            "extra_stop_words" : ["kidney"],
+        })
+        assert normalizer.normalize("Kidney of the") == {"kidney", "of", "the"}
+
+    def test_batch_uses_the_same_lists(self, stop_word_normalizer):
+        texts = ["No fever", "Kidney abnormalities", "Back pain"]
+        assert stop_word_normalizer.normalize_batch(texts) == [
+            stop_word_normalizer.normalize(t) for t in texts
+        ]
 
 
 class TestBatchNormalization:

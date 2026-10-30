@@ -16,6 +16,8 @@ normalizer:
   lemmatizing: True
   stemming: False
   stop_word_removal: True
+  keep_stop_words: []
+  extra_stop_words: []
 ```
 
 | Key | Type | Default | Description |
@@ -25,6 +27,10 @@ normalizer:
 | `lemmatizing` | `bool` | `True` | Reduce tokens to their POS-guided lemma instead of keeping raw text. |
 | `stemming` | `bool` | `False` | Apply an NLTK `PorterStemmer` on top of the (lemmatized or raw) token. Only loaded/applied when set to `True`. Keeps the casing when `lower_case` is `False`. |
 | `stop_word_removal` | `bool` | `True` | Drop tokens spaCy marks as stop words. This is spaCy's general English list, so it also removes words such as `no`, `not`, `without` and `back`. |
+| `keep_stop_words` | `list[str]` | `[]` | Words that are never removed, e.g. `["no", "not", "without", "back"]`. Only used with `stop_word_removal: True`. |
+| `extra_stop_words` | `list[str]` | `[]` | Words that are removed in addition to spaCy's list. Only used with `stop_word_removal: True`. |
+
+A token matches an entry of `keep_stop_words` or `extra_stop_words` if its text or its lemma does, ignoring the casing, so `Back` matches `back`, `abnormalities` matches `abnormality` and `n't` matches `not`. Entries must be single words (an entry such as `of the` could never match a token), and a word must not be in both lists.
 
 All keys are optional — omitted keys fall back to the defaults above, and an empty `normalizer:` section uses all defaults. A section that is not a mapping (e.g. `normalizer: false`) raises a `pydantic.ValidationError`. The schema is validated with `extra="forbid"`, so any key not listed in this table (e.g. a typo) raises a `pydantic.ValidationError` at `Normalizer` construction time rather than being silently ignored.
 

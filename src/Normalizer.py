@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc    import Iterable
 from nltk.stem          import PorterStemmer
 from spacy.language     import Language
-from spacy.tokens       import Doc
+from spacy.tokens       import Doc, Token
 from .NormalizerConfig  import NormalizerConfig
 from logger             import Logger, LoggerConfig
 import os
@@ -325,6 +325,19 @@ class Normalizer:
         except (TypeError, ValueError):
             return False
 
+    def _isStopWord(self, token: Token) -> bool:
+        """Tell whether a token is removed as a stop word.
+
+        A token is matched against keep_stop_words and extra_stop_words by
+        its lowercase text and lemma, so the lists work regardless of the
+        input casing and of the word form ("abnormalities" matches
+        "abnormality", "n't" matches "not").
+        """
+        forms = {token.lower_, token.lemma_.lower()}
+        if forms & self.config.keep_stop_words:
+            return False
+        return token.is_stop or bool(forms & self.config.extra_stop_words)
+
     def _tokens(self, doc: Doc) -> set[str]:
         """Apply the configured token filters and transformations to a doc."""
         tokens: set[str] = set()
@@ -341,8 +354,9 @@ class Normalizer:
                 continue
 
             # 2. Stopword Removal (spaCy's general English stop word list,
-            #    which also contains words such as "no", "not" and "back")
-            if self.config.stop_word_removal and token.is_stop:
+            #    which also contains words such as "no", "not" and "back",
+            #    adjusted by keep_stop_words and extra_stop_words)
+            if self.config.stop_word_removal and self._isStopWord(token):
                 continue
 
             # 3. Lemmatization: the POS-guided lemma, or the token text as is

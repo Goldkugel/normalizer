@@ -5,7 +5,7 @@ Validates the "normalizer" section of the YAML config file, or the
 equivalent dict, before the Normalizer loads its spaCy model.
 """
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 class NormalizerConfig(BaseModel):
     """Pydantic model defining and validating the "normalizer" config section.
@@ -45,3 +45,40 @@ class NormalizerConfig(BaseModel):
     # this list is not domain-specific and includes words that can matter in
     # clinical terms, such as "no", "not", "without" and "back".
     stop_word_removal: bool = True
+
+    # Adjust spaCy's stop word list; only used if stop_word_removal is True.
+    # keep_stop_words are never removed (e.g. "no", "not", "without", "back"),
+    # extra_stop_words are removed in addition (e.g. filler words of ontology
+    # labels). A token matches an entry if its text or its lemma does,
+    # ignoring the casing, so "Back" matches "back" and "abnormalities"
+    # matches "abnormality". Stored as frozensets, which keeps the settings
+    # read-only and the lookups fast; YAML lists are converted.
+    keep_stop_words: frozenset[str]  = frozenset()
+    extra_stop_words: frozenset[str] = frozenset()
+
+    @field_validator("keep_stop_words", "extra_stop_words")
+    @classmethod
+    def check_stop_words(cls, words: frozenset[str]) -> frozenset[str]:
+        """
+        Lowercase the entries and reject those that can never match a token.
+
+        Tokens are single words, so an empty entry or one with whitespace
+        (e.g. "of the") would silently have no effect.
+        """
+        for word in words:
+            if not word or any(c.isspace() for c in word):
+                raise ValueError(
+                    f"Stop word entries must be single words, not {word!r}."
+                )
+        return frozenset(word.lower() for word in words)
+
+    @model_validator(mode="after")
+    def check_stop_word_overlap(self) -> "NormalizerConfig":
+        """Reject words that are both kept and removed, which is ambiguous."""
+        both = self.keep_stop_words & self.extra_stop_words
+        if both:
+            raise ValueError(
+                "Words in both keep_stop_words and extra_stop_words: "
+                f"{sorted(both)}."
+            )
+        return self

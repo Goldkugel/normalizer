@@ -8,6 +8,7 @@ logger:
   header_length: 60
   log_runtime: True
   format: "%Y-%m-%d %H:%M:%S"
+  encoding: "utf-8"
 # Read by Normalizer (validated by NormalizerConfig); see config/README.md.
 normalizer:
   model_name: "en_core_sci_sm"
@@ -15,3 +16,5 @@ normalizer:
   lemmatizing: True
   stemming: False
   stop_word_removal: True
+  keep_stop_words: []
+  extra_stop_words: []

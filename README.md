@@ -79,7 +79,8 @@ normalizer:
   lemmatizing: True
   stemming: False
   stop_word_removal: True
-
+  keep_stop_words: []
+  extra_stop_words: []
 ```
 
 | Parameter | Type | Default | Description |
@@ -89,6 +90,10 @@ normalizer:
 | `lemmatizing` | `bool` | `True` | Apply POS-guided lemmatization to base form. |
 | `stemming` | `bool` | `False` | Apply NLTK Porter Stemmer to tokens (respects `lower_case`). |
 | `stop_word_removal` | `bool` | `True` | Remove words on spaCy's general English stop word list (see [Known Limitations](#known-limitations)). |
+| `keep_stop_words` | `list[str]` | `[]` | Words that are never removed, e.g. `["no", "not", "without", "back"]`. |
+| `extra_stop_words` | `list[str]` | `[]` | Words that are removed in addition to spaCy's list, e.g. filler words of ontology labels. |
+
+`keep_stop_words` and `extra_stop_words` only take effect with `stop_word_removal: True`. A token matches an entry if its text or its lemma does, ignoring the casing (`Back` matches `back`, `abnormalities` matches `abnormality`, `n't` matches `not`). Entries must be single words, and a word must not be in both lists; otherwise a `pydantic.ValidationError` is raised.
 
 ---
 
@@ -149,7 +154,7 @@ The settings are read-only (`normalizer.config.stemming = True` raises a `pydant
 
 ## Known Limitations
 
-* **Stop words are not domain-specific.** `stop_word_removal` uses spaCy's general English stop word list, which also contains words that carry meaning in clinical terms, e.g. negation (`no`, `not`, `without`), location (`back`, `front`, `side`, `above`, `below`) and numbers (`first`, `two`). For example, *Back pain* normalizes to `{'pain'}`.
+* **Stop words are not domain-specific.** `stop_word_removal` uses spaCy's general English stop word list, which also contains words that carry meaning in clinical terms, e.g. negation (`no`, `not`, `without`), location (`back`, `front`, `side`, `above`, `below`) and numbers (`first`, `two`). For example, *Back pain* normalizes to `{'pain'}` and *No fever* to `{'fever'}` with the defaults. List such words in `keep_stop_words` to keep them (*Back pain* → `{'back', 'pain'}`).
 * **Logger configuration.** The logger is a process-wide singleton, so only the first module that creates it decides its configuration. If `Normalizer` is created first and its configuration has no `logger` section (or is given as normalizer settings only or as a `NormalizerConfig`), the logger falls back to `./config/config.yaml` relative to the working directory, or to its built-in defaults (logging to `./data/logs/output.log`) if that file does not exist.
 
 ---
