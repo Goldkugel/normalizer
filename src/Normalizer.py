@@ -74,50 +74,52 @@ class Normalizer:
             - a dict, either the content of such a file (with "normalizer"
               and optionally "logger" keys) or just the normalizer settings
               themselves;
-            - a NormalizerConfig, of which a copy is stored.
+            - a NormalizerConfig.
+
+            The settings are read-only afterwards (see NormalizerConfig).
 
             If no other module has configured the Logger yet, it is
             configured from the same source: the "logger" section of the
-            file, or the "logger" key of a full configuration dict. Sources
-            without logger settings leave the Logger to ./config/config.yaml
-            if that file exists, and to its built-in defaults otherwise.
+            file, or the "logger" key of a full configuration dict (an empty
+            section means the logger defaults). Sources without logger
+            settings leave the Logger to ./config/config.yaml if that file
+            exists, and to its built-in defaults otherwise.
 
         Raises
         ------
         FileNotFoundError
             If the configuration file does not exist.
         KeyError
-            If the file has no "normalizer" section, or if the Logger falls
-            back to an existing ./config/config.yaml without a "logger"
-            section.
+            If the file is not a mapping or has no "normalizer" section, or
+            if the Logger falls back to an existing ./config/config.yaml
+            without a "logger" section.
         pydantic.ValidationError
-            If the normalizer or logger settings contain an unknown key or
-            an invalid value.
+            If the normalizer or logger settings are not a mapping, or
+            contain an unknown key or an invalid value.
         OSError
             If the spaCy model named in the settings is not installed.
         """
-        self.config, logger_path, logger_settings = Normalizer._resolveConfig(config)
+        self.config, logger_settings = Normalizer._resolveConfig(config)
 
         # The Logger is a process-wide singleton. If it already has a
         # configuration (e.g. set by the calling pipeline), it is kept: a
         # bare Logger() call does not reload. Otherwise it is configured
         # from the same source as the normalizer, so a custom config also
         # covers logging:
-        # - a config file with a "logger" section: Logger loads that file;
-        # - a full configuration dict with a "logger" key: its settings are
-        #   validated here, since Logger v1.1.0 only accepts file paths;
+        # - a "logger" section in the file or the full configuration dict:
+        #   its settings are validated here and stored on the Logger class,
+        #   which is all Logger(path) would do (Logger v1.1.0 only accepts
+        #   file paths, not dicts);
         # - no logger settings: Logger() loads its default path
         #   (./config/config.yaml) if that file exists; otherwise the
         #   LoggerConfig defaults are set, so the normalizer also works
         #   outside a project directory.
-        if Logger.config is None and logger_path is not None:
-            log = Logger(logger_path)
-        else:
-            if Logger.config is None and logger_settings is not None:
+        if Logger.config is None:
+            if logger_settings is not None:
                 Logger.config = LoggerConfig.model_validate(logger_settings)
-            elif Logger.config is None and not os.path.isfile(standard_directory):
+            elif not os.path.isfile(standard_directory):
                 Logger.config = LoggerConfig()
-            log = Logger()
+        log = Logger()
 
         log.log(f"Loading spacy model '{self.config.model_name}'...")
         # The named-entity recognizer and the dependency parser are not needed
@@ -137,51 +139,56 @@ class Normalizer:
     @staticmethod
     def _resolveConfig(
         config: str | os.PathLike | dict | NormalizerConfig,
-    ) -> tuple[NormalizerConfig, str | None, dict | None]:
+    ) -> tuple[NormalizerConfig, object | None]:
         """
         Turn the `config` argument of __init__ into a NormalizerConfig.
 
-        Returns the NormalizerConfig, the YAML file it came from if that
-        file has a "logger" section (or None), and the "logger" section of a
-        full configuration dict (or None), so __init__ can configure the
-        Logger from the same source. At most one of the last two is set.
+        Returns the NormalizerConfig and the "logger" section of the file or
+        full configuration dict, so __init__ can configure the Logger from
+        the same source. The section is None if the source has none, and {}
+        if it is empty; anything else is left to LoggerConfig to validate.
         """
-        # Copy a given NormalizerConfig so later changes by the caller do
-        # not silently change the normalizer's configuration.
+        # NormalizerConfig is frozen, so it can be used without a copy.
         if isinstance(config, NormalizerConfig):
-            return config.model_copy(deep=True), None, None
+            return config, None
 
         if isinstance(config, dict):
             # A full configuration (the parsed YAML file) has a "normalizer"
             # key, which is not a valid normalizer setting itself, so the
-            # two kinds of dict cannot be confused. An empty section
-            # ("normalizer:" with no keys) means "use all defaults".
+            # two kinds of dict cannot be confused.
             if configuration_section in config:
-                section = config[configuration_section] or {}
-                return (
-                    NormalizerConfig.model_validate(section),
-                    None,
-                    config.get(logger_section),
-                )
-            return NormalizerConfig.model_validate(config), None, None
+                return Normalizer._fromSections(config)
+            return NormalizerConfig.model_validate(config), None
 
         path = os.fspath(config)
         with open(path, "r", encoding="utf-8") as f:
-            # An empty file is parsed as None; treat it like a file without
-            # sections so the KeyError below explains what is missing.
-            data = yaml.safe_load(f) or {}
+            data = yaml.safe_load(f)
 
-        if configuration_section not in data:
+        # An empty file is parsed as None, a file of plain text as a str and
+        # a YAML list as a list; none of them has sections to read.
+        if not isinstance(data, dict) or configuration_section not in data:
             raise KeyError(
                 f"Config file '{path}' has no '{configuration_section}' section."
             )
-        # Only hand the path on to the Logger if the file has logger settings.
-        logger_path = path if logger_section in data else None
-        return (
-            NormalizerConfig.model_validate(data[configuration_section] or {}),
-            logger_path,
-            None,
-        )
+        return Normalizer._fromSections(data)
+
+    @staticmethod
+    def _fromSections(data: dict) -> tuple[NormalizerConfig, object | None]:
+        """
+        Read the "normalizer" and "logger" sections of a full configuration.
+
+        An empty section ("normalizer:" with no keys, parsed as None) means
+        "use all defaults". Only None is replaced: other values that are not
+        a mapping, such as false or a list, are passed on, so validation
+        rejects them instead of silently falling back to the defaults.
+        """
+        section = data[configuration_section]
+        settings = NormalizerConfig.model_validate({} if section is None else section)
+
+        if logger_section not in data:
+            return settings, None
+        logger_settings = data[logger_section]
+        return settings, {} if logger_settings is None else logger_settings
 
     def normalize_batch(
         self,
@@ -203,15 +210,35 @@ class Normalizer:
         batch_size : int, optional
             Number of terms spaCy processes per batch (default 256).
         n_process : int, optional
-            Number of worker processes spaCy starts (default 1). Each process
-            loads its own copy of the model, so more processes only pay off
-            for long lists.
+            Number of worker processes spaCy starts (default 1), or -1 for
+            one per CPU. Each process loads its own copy of the model, so
+            more processes only pay off for long lists.
 
         Returns
         -------
         list[set[str]]
             One token set per input term, in input order.
+
+        Raises
+        ------
+        TypeError
+            If `texts` is a single string, which would otherwise be
+            normalized character by character.
+        ValueError
+            If `batch_size` is smaller than 1 (spaCy would silently return
+            no results for 0), or `n_process` is neither -1 nor at least 1.
         """
+        # Checked here, because spaCy gives no or only cryptic errors.
+        if isinstance(texts, str):
+            raise TypeError(
+                "normalize_batch() expects an iterable of terms, not a single "
+                "string; use normalize() for one term."
+            )
+        if batch_size < 1:
+            raise ValueError(f"batch_size must be at least 1, not {batch_size}.")
+        if n_process != -1 and n_process < 1:
+            raise ValueError(f"n_process must be -1 or at least 1, not {n_process}.")
+
         # The generator prepares each term only when spaCy reads it, so the
         # input is not copied. Unlike normalize(), empty strings are not
         # skipped here: spaCy has to yield one doc per input to keep the

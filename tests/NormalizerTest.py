@@ -111,6 +111,15 @@ class TestNormalizerConfig:
         with pytest.raises(ValidationError):
             NormalizerConfig(stemming=value)
 
+    def test_config_is_read_only(self):
+        config = NormalizerConfig()
+        with pytest.raises(ValidationError):
+            config.stemming = True  # type: ignore[misc]
+
+    def test_config_variant_can_be_made_with_model_copy(self):
+        config = NormalizerConfig().model_copy(update={"stemming": True})
+        assert config.stemming is True
+
 
 class TestShippedConfig:
     """The repository's config/config.yaml must stay valid and match the
@@ -259,6 +268,27 @@ class TestBatchNormalization:
             {"kidney"},
             set(),
             {"hepat", "c"},
+        ]
+
+    def test_batch_rejects_a_single_string(self, standard_normalizer):
+        # A str is an iterable of characters, which would each be normalized
+        with pytest.raises(TypeError, match="single string"):
+            standard_normalizer.normalize_batch("Kidney")
+
+    @pytest.mark.parametrize("batch_size", [0, -1])
+    def test_batch_rejects_batch_sizes_below_one(self, standard_normalizer, batch_size):
+        # spaCy returns no results at all for a batch size of 0
+        with pytest.raises(ValueError, match="batch_size"):
+            standard_normalizer.normalize_batch(["Kidney"], batch_size=batch_size)
+
+    @pytest.mark.parametrize("n_process", [0, -2])
+    def test_batch_rejects_invalid_process_counts(self, standard_normalizer, n_process):
+        with pytest.raises(ValueError, match="n_process"):
+            standard_normalizer.normalize_batch(["Kidney"], n_process=n_process)
+
+    def test_batch_with_one_process_per_cpu(self, standard_normalizer):
+        assert standard_normalizer.normalize_batch(["Kidneys"], n_process=-1) == [
+            {"kidney"}
         ]
 
     def test_batch_of_nothing_is_an_empty_list(self, standard_normalizer):
@@ -423,9 +453,12 @@ class TestConfigSources:
         normalizer = Normalizer(config=config)
         assert normalizer.config == config
 
-        # Later changes to the passed object must not affect the normalizer.
-        config.lower_case = False
-        assert normalizer.config.lower_case is True
+    def test_settings_cannot_be_changed_after_loading(self):
+        # The stemmer is only loaded with stemming enabled, so switching it
+        # on afterwards would break normalize()
+        normalizer = Normalizer(config={"stemming": False})
+        with pytest.raises(ValidationError):
+            normalizer.config.stemming = True  # type: ignore[misc]
 
     def test_missing_file_raises_file_not_found_error(self, tmp_path):
         with pytest.raises(FileNotFoundError):
@@ -440,6 +473,26 @@ class TestConfigSources:
     def test_rejects_unknown_keys_in_the_section_of_a_full_dict(self):
         with pytest.raises(ValidationError):
             Normalizer(config={"normalizer": {"unknown_key": True}})
+
+    @pytest.mark.parametrize("section", [False, 0, "", [], "stemming"])
+    def test_rejects_a_section_that_is_not_a_mapping_in_a_dict(self, section):
+        # Only None (an empty "normalizer:" section) means "use the defaults"
+        with pytest.raises(ValidationError):
+            Normalizer(config={"normalizer": section})
+
+    def test_rejects_a_section_that_is_not_a_mapping_in_a_file(self, tmp_path):
+        config_path = tmp_path / "false_section.yaml"
+        config_path.write_text("normalizer: false\n")
+        with pytest.raises(ValidationError):
+            Normalizer(config=str(config_path))
+
+    @pytest.mark.parametrize("content", ["normalizer\n", "- normalizer\n"])
+    def test_file_that_is_not_a_mapping_raises_key_error(self, tmp_path, content):
+        # Plain text and YAML lists have no sections to read
+        config_path = tmp_path / "not_a_mapping.yaml"
+        config_path.write_text(content)
+        with pytest.raises(KeyError, match="normalizer"):
+            Normalizer(config=str(config_path))
 
     def test_dict_with_only_a_logger_section_is_rejected(self):
         # Without a "normalizer" key the dict is read as normalizer settings,
@@ -531,6 +584,42 @@ class TestLoggerConfiguration:
         try:
             with pytest.raises(ValidationError):
                 Normalizer(config={"logger": {"unknown_key": 1}, "normalizer": {}})
+        finally:
+            Logger(standard_config_path)
+
+    @pytest.mark.parametrize("source", ["dict", "file"])
+    def test_empty_logger_section_means_the_logger_defaults(
+        self, tmp_path, monkeypatch, standard_config_path, source
+    ):
+        # The default file has other logger settings, which an empty section
+        # must not fall back to
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config" / "config.yaml").write_text(
+            f"logger:\n  folder: \"{tmp_path}/other_logs/\"\nnormalizer: {{}}\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        if source == "dict":
+            config: object = {"logger": None, "normalizer": {}}
+        else:
+            config = tmp_path / "empty_logger.yaml"
+            config.write_text("logger:\nnormalizer: {}\n")
+
+        _reset_logger()
+        try:
+            Normalizer(config=config)
+            assert Logger.config == LoggerConfig()
+        finally:
+            Logger(standard_config_path)
+
+    def test_logger_section_that_is_not_a_mapping_is_rejected(
+        self, tmp_path, standard_config_path
+    ):
+        config_path = tmp_path / "false_logger.yaml"
+        config_path.write_text("logger: false\nnormalizer: {}\n")
+        _reset_logger()
+        try:
+            with pytest.raises(ValidationError):
+                Normalizer(config=str(config_path))
         finally:
             Logger(standard_config_path)
 

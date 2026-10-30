@@ -13,12 +13,16 @@ class NormalizerConfig(BaseModel):
     Instances control which pipeline components (lowercasing, lemmatization,
     stemming, stopword removal) are active and specify the underlying NLP
     model to use. Every field has a default, so all keys are optional.
+    Instances are read-only; use model_copy(update={...}) for a variant.
     """
 
     # Reject any keys in the input data that aren't explicitly defined below.
     # This catches typos or outdated config keys early, instead of silently
-    # ignoring them.
-    model_config            = ConfigDict(extra="forbid")
+    # ignoring them. Frozen, because the Normalizer loads the model and the
+    # stemmer once from these settings: changing them afterwards would have
+    # no effect (model_name) or break normalize() (stemming), so assigning a
+    # field raises a ValidationError instead.
+    model_config            = ConfigDict(extra="forbid", frozen=True)
 
     # The spaCy / scispacy model name to load for tokenization and lemmatization.
     # The model must be installed as a Python package; only the default,

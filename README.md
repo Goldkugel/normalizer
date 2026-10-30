@@ -119,6 +119,8 @@ print(normalizer.normalize_batch(["Kidney abnormalities", None]))
 # Output: [{'kidney', 'abnormality'}, set()]
 ```
 
+`normalize_batch(texts, batch_size=256, n_process=1)` expects an iterable of terms (a list, a pandas column, a generator); a single string raises a `TypeError` instead of being normalized character by character. `batch_size` must be at least 1 and `n_process` either -1 (one process per CPU) or at least 1, otherwise a `ValueError` is raised.
+
 ### Configuration sources
 
 Besides a YAML path, `Normalizer` accepts a dict or a `NormalizerConfig`:
@@ -135,11 +137,13 @@ normalizer = Normalizer("config/config.yaml")
 normalizer = Normalizer({"normalizer": {"stemming": True}, "logger": {"folder": "./logs/"}})
 normalizer = Normalizer({"stemming": True})
 
-# From a NormalizerConfig (a copy is stored).
+# From a NormalizerConfig.
 normalizer = Normalizer(NormalizerConfig(stemming=True))
 ```
 
-`Normalizer` logs through the shared `logger` package. If no other module has configured the logger yet, `Normalizer` configures it from the same source: the `logger` section of the config file, or the `logger` key of a full configuration dict; otherwise the existing logger configuration is kept. With the shipped config, log messages are appended to `./data/logs/output.log` (the folder is created if missing).
+The settings are read-only (`normalizer.config.stemming = True` raises a `pydantic.ValidationError`), since the model and the stemmer are loaded only once; create a new `Normalizer` for other settings. A variant of a `NormalizerConfig` can be made with `config.model_copy(update={"stemming": True})`.
+
+`Normalizer` logs through the shared `logger` package. If no other module has configured the logger yet, `Normalizer` configures it from the same source: the `logger` section of the config file, or the `logger` key of a full configuration dict (an empty section means the logger's defaults); otherwise the existing logger configuration is kept. With the shipped config, log messages are appended to `./data/logs/output.log` (the folder is created if missing).
 
 ---
 
