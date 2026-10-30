@@ -7,18 +7,24 @@ also provides the en_core_sci_sm model. Run with:
     pytest tests/NormalizerTest.py -v
 
 The tests write their own temporary config and log files, so they can be
-started from any directory.
+started from any directory. Only TestShippedConfig reads the repository's
+config/config.yaml (without loading it into the Logger).
 """
 
 import math
 import pathlib
 import sys
+import numpy as np
 import pytest
 import yaml
 from pydantic import ValidationError
 
+import normalizer as normalizer_package
 from logger import Logger, LoggerConfig
 from normalizer import Normalizer, NormalizerConfig
+
+# The repository's own config file, found relative to this test file.
+SHIPPED_CONFIG = pathlib.Path(__file__).resolve().parent.parent / "config" / "config.yaml"
 
 # --- Fixtures -------------------------------------------------------------
 def _reset_logger():
@@ -89,6 +95,24 @@ class TestNormalizerConfig:
         with pytest.raises(ValidationError):
             NormalizerConfig(invalid_param=123)  # type: ignore
 
+    @pytest.mark.parametrize("value", ["maybe", 2, None])
+    def test_config_rejects_invalid_flag_values(self, value):
+        with pytest.raises(ValidationError):
+            NormalizerConfig(stemming=value)
+
+
+class TestShippedConfig:
+    """The repository's config/config.yaml must stay valid and match the
+    defaults documented in the READMEs."""
+
+    def test_normalizer_section_matches_the_defaults(self):
+        data = yaml.safe_load(SHIPPED_CONFIG.read_text())
+        assert NormalizerConfig.model_validate(data["normalizer"]) == NormalizerConfig()
+
+    def test_logger_section_is_valid(self):
+        data = yaml.safe_load(SHIPPED_CONFIG.read_text())
+        LoggerConfig.model_validate(data["logger"])
+
 
 # All tests in this class use the shared normalizer, i.e. with stemming.
 class TestDefaultPipelineBehavior:
@@ -144,6 +168,39 @@ class TestDefaultPipelineBehavior:
         assert standard_normalizer.normalize(None) == set()
         assert standard_normalizer.normalize(math.nan) == set()
 
+    def test_treats_numpy_nan_as_empty_input(self, standard_normalizer):
+        # Missing values in a pandas column of objects or floats arrive as
+        # numpy.float64 NaN, a subclass of float
+        assert standard_normalizer.normalize(np.float64("nan")) == set()
+
+    def test_converts_non_string_input_with_str(self, standard_normalizer):
+        assert standard_normalizer.normalize(42) == {"42"}
+
+    def test_drops_symbol_tokens_but_keeps_numbers(self, standard_normalizer):
+        assert standard_normalizer.normalize("Blood pressure > 140 %") == {
+            "blood",
+            "pressur",
+            "140",
+        }
+
+    def test_keeps_hyphenated_terms_as_one_token(self, standard_normalizer):
+        assert standard_normalizer.normalize("COVID-19 pneumonia") == {
+            "covid-19",
+            "pneumonia",
+        }
+
+    def test_collapses_repeated_words(self, standard_normalizer):
+        assert standard_normalizer.normalize("Kidney kidneys") == {"kidney"}
+
+    def test_general_stop_word_list_removes_negation_and_location(
+        self, standard_normalizer
+    ):
+        # Documented limitation (README, "Known Limitations"): spaCy's general
+        # English stop word list also removes clinically relevant words. If
+        # this test fails, the limitation is gone and the docs need updating.
+        assert standard_normalizer.normalize("No fever") == {"fever"}
+        assert standard_normalizer.normalize("Back pain") == {"pain"}
+
 
 class TestBatchNormalization:
 
@@ -160,11 +217,51 @@ class TestBatchNormalization:
 
     def test_batch_treats_missing_values_as_empty_input(self, standard_normalizer):
         # Empty pandas cells arrive as NaN floats; they must not become "nan"
-        assert standard_normalizer.normalize_batch([None, math.nan, "kidney"]) == [
-            set(),
-            set(),
-            {"kidney"},
+        assert standard_normalizer.normalize_batch(
+            [None, math.nan, np.float64("nan"), "kidney"]
+        ) == [set(), set(), set(), {"kidney"}]
+
+    def test_batch_of_nothing_is_an_empty_list(self, standard_normalizer):
+        assert standard_normalizer.normalize_batch([]) == []
+
+    def test_batch_accepts_any_iterable(self, standard_normalizer):
+        texts = ("Kidney", "Hepatitis C")
+        assert standard_normalizer.normalize_batch(t for t in texts) == [
+            standard_normalizer.normalize(t) for t in texts
         ]
+
+    def test_batch_keeps_input_order_across_batches_and_processes(
+        self, standard_normalizer
+    ):
+        # More terms than fit in one batch, split over two worker processes;
+        # empty and missing values must keep their place in the output
+        texts = ["Kidney", "", "Hepatitis C", None, "Type 1 diabetes", "Liver"] * 3
+        expected = [standard_normalizer.normalize(t) for t in texts]
+        assert standard_normalizer.normalize_batch(texts, batch_size=2) == expected
+        assert (
+            standard_normalizer.normalize_batch(texts, batch_size=2, n_process=2)
+            == expected
+        )
+
+
+class TestModelLoading:
+
+    def test_unused_pipeline_components_are_not_loaded(self, standard_normalizer):
+        # The tagger and the lemmatizer are needed; the parser and the
+        # named-entity recognizer are excluded to save time
+        pipe_names = standard_normalizer.nlp.pipe_names
+        assert "tagger" in pipe_names
+        assert "lemmatizer" in pipe_names
+        assert "parser" not in pipe_names
+        assert "ner" not in pipe_names
+
+    def test_stemmer_is_only_loaded_when_stemming_is_enabled(self, standard_normalizer):
+        assert hasattr(standard_normalizer, "stemmer")
+        assert not hasattr(Normalizer(config={"stemming": False}), "stemmer")
+
+    def test_unknown_model_raises_os_error(self):
+        with pytest.raises(OSError):
+            Normalizer(config={"model_name": "no_such_spacy_model"})
 
 
 class TestConfigFlagToggles:
@@ -294,6 +391,22 @@ class TestConfigSources:
         with pytest.raises(FileNotFoundError):
             Normalizer(config=str(tmp_path / "missing.yaml"))
 
+    def test_empty_file_raises_key_error(self, tmp_path):
+        config_path = tmp_path / "empty.yaml"
+        config_path.write_text("")
+        with pytest.raises(KeyError, match="normalizer"):
+            Normalizer(config=str(config_path))
+
+    def test_rejects_unknown_keys_in_the_section_of_a_full_dict(self):
+        with pytest.raises(ValidationError):
+            Normalizer(config={"normalizer": {"unknown_key": True}})
+
+    def test_dict_with_only_a_logger_section_is_rejected(self):
+        # Without a "normalizer" key the dict is read as normalizer settings,
+        # in which "logger" is an unknown key
+        with pytest.raises(ValidationError):
+            Normalizer(config={"logger": {}})
+
 
 class TestLoggerConfiguration:
 
@@ -345,6 +458,52 @@ class TestLoggerConfiguration:
         Normalizer(config={"stemming": False})
         assert Logger.config.folder == f"{tmp_path}/default_logs/"
 
+    def test_file_without_logger_section_uses_defaults_without_a_default_file(
+        self, tmp_path, monkeypatch, standard_config_path
+    ):
+        config_path = tmp_path / "normalizer_only.yaml"
+        config_path.write_text("normalizer: {}\n")
+        monkeypatch.chdir(tmp_path)
+        _reset_logger()
+        Normalizer(config=str(config_path))
+        assert Logger.config == LoggerConfig()
+
+        # Point the Logger back to the temporary test folder for later tests
+        Logger(standard_config_path)
+
+    def test_default_file_without_logger_section_raises_key_error(
+        self, tmp_path, monkeypatch, standard_config_path
+    ):
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config" / "config.yaml").write_text("normalizer: {}\n")
+        monkeypatch.chdir(tmp_path)
+        _reset_logger()
+        try:
+            with pytest.raises(KeyError, match="logger"):
+                Normalizer(config=NormalizerConfig())
+        finally:
+            Logger(standard_config_path)
+
+    def test_invalid_logger_settings_in_a_full_dict_are_rejected(
+        self, standard_config_path
+    ):
+        _reset_logger()
+        try:
+            with pytest.raises(ValidationError):
+                Normalizer(config={"logger": {"unknown_key": 1}, "normalizer": {}})
+        finally:
+            Logger(standard_config_path)
+
+    def test_progress_is_written_to_the_configured_log_file(self, tmp_path):
+        _reset_logger()
+        Normalizer(config={
+            "logger"    : {"folder": str(tmp_path) + "/", "file_name": "run.log"},
+            "normalizer": {"stemming": True},
+        })
+        log_text = (tmp_path / "run.log").read_text()
+        assert "Loading spacy model 'en_core_sci_sm' completed." in log_text
+        assert "Loading stemmer completed." in log_text
+
     def test_existing_logger_configuration_is_kept(self, tmp_path, standard_normalizer):
         other_config = tmp_path / "other.yaml"
         other_config.write_text(
@@ -353,6 +512,14 @@ class TestLoggerConfiguration:
         folder_before = Logger.config.folder
         Normalizer(config=str(other_config))
         assert Logger.config.folder == folder_before
+
+
+class TestPackage:
+
+    def test_exports(self):
+        assert normalizer_package.__all__ == ["Normalizer", "NormalizerConfig"]
+        assert normalizer_package.Normalizer is Normalizer
+        assert normalizer_package.NormalizerConfig is NormalizerConfig
 
 
 class TestOntologyMatchingAlignment:

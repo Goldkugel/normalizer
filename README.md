@@ -35,7 +35,7 @@ Built on top of [scispacy](https://allenai.github.io/scispacy/) and [spaCy](http
 ├── tests/
 │   └── NormalizerTest.py    # Pytest test suite (not part of the installed package)
 ├── .github/workflows/
-│   └── tests.yml            # CI: tests on Python 3.9, 3.11 and 3.12, ruff, mypy
+│   └── tests.yml            # CI: tests with coverage on Python 3.9, 3.11 and 3.12, ruff, mypy
 ├── LICENSE
 ├── pyproject.toml           # Package metadata, dependencies, ruff and mypy settings
 └── README.md
@@ -152,19 +152,22 @@ normalizer = Normalizer(NormalizerConfig(stemming=True))
 
 ## Running Tests
 
-The test suite in `tests/` is only meant for testing this repository and is not part of the installed package. It tests the installed `normalizer` package, so install it first (`pip install -e ".[test]"`), then run from the project root:
+The test suite in `tests/` is only meant for testing this repository and is not part of the installed package. It tests the installed `normalizer` package, so install it first, then run pytest from the project root:
 
 ```bash
-pytest tests/NormalizerTest.py -v
+pip install -e ".[test]"
+pytest -v
 ```
 
-or, without calling pytest directly:
+`pyproject.toml` points pytest at every `tests/*Test.py` file, so `pytest` without arguments runs the whole suite, and new test files are picked up by CI as well. A single file can also be run directly with `python3 tests/NormalizerTest.py`.
+
+To also see which lines and branches of the package the tests cover:
 
 ```bash
-python3 tests/NormalizerTest.py
+pytest --cov=normalizer --cov-branch --cov-report=term-missing
 ```
 
-The tests write their own temporary config and log files and do not touch `config/config.yaml` or `data/logs/`.
+The tests write their own temporary config and log files and do not touch `data/logs/`; `config/config.yaml` is only read, to check that it is valid and matches the documented defaults. The `test` extra installs `pytest` and `pytest-cov`.
 
 ### Linting
 
@@ -176,4 +179,4 @@ ruff check .
 mypy
 ```
 
-GitHub Actions runs the tests and both linters on every push and pull request (`.github/workflows/tests.yml`).
+GitHub Actions runs the tests (with a coverage report on the run's summary page) and both linters on every push and pull request (`.github/workflows/tests.yml`).

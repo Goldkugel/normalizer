@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest>=6", "pytest-cov"]
 lint = ["mypy", "ruff", "types-PyYAML"]
 
 [tool.setuptools]
@@ -45,10 +45,14 @@ files = ["src"]
 module = ["nltk.*", "logger.*"]
 ignore_missing_imports = true
 
-# Third-party warnings raised inside spaCy, not by this package: its tokenizer
-# regexes ("Possible set union", Python 3.10+) and its use of a deprecated
-# click function.
+# The test files are named *Test.py, which pytest does not collect by
+# default; with testpaths and python_files a plain `pytest` finds them.
+# The filtered warnings are raised inside spaCy, not by this package: its
+# tokenizer regexes ("Possible set union", Python 3.10+) and its use of a
+# deprecated click function.
 [tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["*Test.py"]
 filterwarnings = [
     "ignore:Possible set union:FutureWarning",
     "ignore:Importing 'parser.split_arg_string' is deprecated:DeprecationWarning",

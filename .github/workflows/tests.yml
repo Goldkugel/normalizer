@@ -1,10 +1,12 @@
-# Runs the Normalizer test suite and the linters on every push and pull
-# request.
+# Runs the Normalizer test suite with coverage and the linters on every push
+# and pull request.
 #
 # The package is installed from the checkout (not in editable mode), so the
 # run also checks that pyproject.toml declares all runtime dependencies,
 # including the en_core_sci_sm model. The tests write their own temporary
 # config and log files, so they do not depend on the working directory.
+# pytest collects every tests/*Test.py file as set in pyproject.toml, so new
+# test files are run without changing this workflow.
 
 name: Tests
 
@@ -40,8 +42,21 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install ".[test]"
 
-      - name: Run tests
-        run: python -m pytest tests/NormalizerTest.py -v
+      # --cov=normalizer measures the installed package (the code under
+      # test), --cov-branch also checks that both sides of every branch are
+      # run, term-missing lists the uncovered lines and branches in the log.
+      - name: Run tests with coverage
+        run: python -m pytest -v --cov=normalizer --cov-branch --cov-report=term-missing
+
+      # Also show the coverage table on the run's summary page. Runs even if
+      # tests failed, as long as coverage data (.coverage) was written.
+      - name: Add coverage to job summary
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -f .coverage ]; then
+            echo "### Coverage (Python ${{ matrix.python-version }})" >> "$GITHUB_STEP_SUMMARY"
+            python -m coverage report --format=markdown >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   lint:
     runs-on: ubuntu-24.04
