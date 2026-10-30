@@ -15,6 +15,7 @@ import math
 import pathlib
 import sys
 import numpy as np
+import pandas as pd
 import pytest
 import yaml
 from pydantic import ValidationError
@@ -25,6 +26,16 @@ from normalizer import Normalizer, NormalizerConfig
 
 # The repository's own config file, found relative to this test file.
 SHIPPED_CONFIG = pathlib.Path(__file__).resolve().parent.parent / "config" / "config.yaml"
+
+# Missing values that can be recognized without pandas.
+PANDAS_FREE_MISSING_VALUES = [
+    np.float64("nan"),        # pandas columns of objects or floats
+    np.float32("nan"),        # not a subclass of float
+    np.datetime64("NaT"),
+]
+
+# All missing values that must normalize to an empty set.
+MISSING_VALUES = PANDAS_FREE_MISSING_VALUES + [pd.NA, pd.NaT]
 
 # --- Fixtures -------------------------------------------------------------
 def _reset_logger():
@@ -168,13 +179,33 @@ class TestDefaultPipelineBehavior:
         assert standard_normalizer.normalize(None) == set()
         assert standard_normalizer.normalize(math.nan) == set()
 
-    def test_treats_numpy_nan_as_empty_input(self, standard_normalizer):
-        # Missing values in a pandas column of objects or floats arrive as
-        # numpy.float64 NaN, a subclass of float
-        assert standard_normalizer.normalize(np.float64("nan")) == set()
+    @pytest.mark.parametrize("missing", MISSING_VALUES, ids=repr)
+    def test_treats_numpy_and_pandas_missing_values_as_empty_input(
+        self, standard_normalizer, missing
+    ):
+        # They must not become tokens such as "nan", "na" or "nat"
+        assert standard_normalizer.normalize(missing) == set()
 
-    def test_converts_non_string_input_with_str(self, standard_normalizer):
+    @pytest.mark.parametrize("missing", PANDAS_FREE_MISSING_VALUES, ids=repr)
+    def test_treats_missing_values_as_empty_input_without_pandas(
+        self, standard_normalizer, monkeypatch, missing
+    ):
+        # Without pandas loaded, missing values are found by comparing them
+        # with themselves
+        monkeypatch.delitem(sys.modules, "pandas")
+        assert standard_normalizer.normalize(missing) == set()
+
+    @pytest.mark.parametrize("pandas_loaded", [True, False])
+    def test_values_that_are_not_missing_are_converted_with_str(
+        self, standard_normalizer, monkeypatch, pandas_loaded
+    ):
+        if not pandas_loaded:
+            monkeypatch.delitem(sys.modules, "pandas")
         assert standard_normalizer.normalize(42) == {"42"}
+        assert standard_normalizer.normalize(0) == {"0"}
+        assert standard_normalizer.normalize(np.float32(1.5)) == {"1.5"}
+        # An array is compared element-wise, not treated as a missing value
+        assert standard_normalizer.normalize(np.array([1, 2])) == {"1", "2"}
 
     def test_drops_symbol_tokens_but_keeps_numbers(self, standard_normalizer):
         assert standard_normalizer.normalize("Blood pressure > 140 %") == {
@@ -220,6 +251,15 @@ class TestBatchNormalization:
         assert standard_normalizer.normalize_batch(
             [None, math.nan, np.float64("nan"), "kidney"]
         ) == [set(), set(), set(), {"kidney"}]
+
+    def test_batch_of_a_pandas_string_column(self, standard_normalizer):
+        # Missing values in a column of the "string" dtype are pandas.NA
+        column = pd.Series(["Kidneys", None, "Hepatitis C"], dtype="string")
+        assert standard_normalizer.normalize_batch(column) == [
+            {"kidney"},
+            set(),
+            {"hepat", "c"},
+        ]
 
     def test_batch_of_nothing_is_an_empty_list(self, standard_normalizer):
         assert standard_normalizer.normalize_batch([]) == []

@@ -12,7 +12,7 @@ Built on top of [scispacy](https://allenai.github.io/scispacy/) and [spaCy](http
 
 * **Biomedical Tokenization:** Powered by `scispacy` (`en_core_sci_sm`) trained on scientific literature.
 * **Single-Character Term Preservation:** Retains single-letter and single-digit tokens (*Hepatitis C*, *Vitamin D*, *Type 1 diabetes*) that general-purpose pipelines often discard as noise, so e.g. *Type 1* and *Type 2 diabetes* stay distinguishable.
-* **Missing-Value Safe:** `None` and `NaN` (e.g. empty pandas cells) normalize to an empty set instead of a spurious `"nan"` token.
+* **Missing-Value Safe:** Missing values — `None`, `NaN` of any float type, `NaT` and `pandas.NA` (e.g. empty pandas cells, also in columns of the `"string"` dtype) — normalize to an empty set instead of spurious tokens such as `"nan"` or `"na"`. pandas is not a dependency; its values are recognized if it is installed.
 * **Configurable Pipeline:** Easily toggle pipeline stages (lowercasing, stopword removal, lemmatization, stemming) via a YAML configuration file, a dict or a `NormalizerConfig`, all validated by **Pydantic**.
 * **Ontology Alignment Ready:** Normalizes variant labels into comparable token representations for exact and set-based entity matching across ontologies like HPO and SNOMED CT.
 
@@ -167,7 +167,7 @@ To also see which lines and branches of the package the tests cover:
 pytest --cov=normalizer --cov-branch --cov-report=term-missing
 ```
 
-The tests write their own temporary config and log files and do not touch `data/logs/`; `config/config.yaml` is only read, to check that it is valid and matches the documented defaults. The `test` extra installs `pytest` and `pytest-cov`.
+The tests write their own temporary config and log files and do not touch `data/logs/`; `config/config.yaml` is only read, to check that it is valid and matches the documented defaults. The `test` extra installs `pytest`, `pytest-cov` and `pandas` (used to build pandas missing values); `pandas` is limited to version 2, since pandas 3 needs numpy 2, which spaCy 3.7 does not support.
 
 ### Linting
 

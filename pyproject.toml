@@ -19,7 +19,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=6", "pytest-cov"]
+# pandas builds the missing values of pandas columns in the tests. pandas 3
+# needs numpy 2, which spaCy 3.7 (thinc 8.2) does not support.
+test = ["pandas<3", "pytest>=6", "pytest-cov"]
 lint = ["mypy", "ruff", "types-PyYAML"]
 
 [tool.setuptools]

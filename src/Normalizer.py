@@ -16,9 +16,9 @@ from spacy.language     import Language
 from spacy.tokens       import Doc
 from .NormalizerConfig  import NormalizerConfig
 from logger             import Logger, LoggerConfig
-import math
 import os
 import spacy
+import sys
 import yaml
 
 # Key under which normalizer settings are expected to live in the YAML config file.
@@ -198,8 +198,8 @@ class Normalizer:
         Parameters
         ----------
         texts : Iterable[object]
-            The terms to normalize. Missing values (None, NaN) are allowed
-            and yield an empty set, like an empty string.
+            The terms to normalize. Missing values (None, NaN, pandas.NA,
+            NaT) are allowed and yield an empty set, like an empty string.
         batch_size : int, optional
             Number of terms spaCy processes per batch (default 256).
         n_process : int, optional
@@ -230,8 +230,9 @@ class Normalizer:
         Parameters
         ----------
         text : object
-            The term to normalize, normally a str. None and NaN are allowed
-            and yield an empty set; other values are converted with str().
+            The term to normalize, normally a str. Missing values (None,
+            NaN, pandas.NA, NaT) are allowed and yield an empty set; other
+            values are converted with str().
 
         Returns
         -------
@@ -249,13 +250,17 @@ class Normalizer:
     def _prepare(self, text: object) -> str:
         """Turn an input value into the string fed to spaCy.
 
-        None and NaN (e.g. empty cells from a pandas column) become "" instead
-        of the literal token "nan"; other non-strings are converted with str().
+        Missing values (e.g. empty cells from a pandas column) become ""
+        instead of literal tokens such as "nan", "na" or "nat"; other
+        non-strings are converted with str().
         """
-        # numpy.float64 is a subclass of float, so NumPy/pandas NaN is caught too.
-        if text is None or (isinstance(text, float) and math.isnan(text)):
+        # Strings, by far the most common input, skip the missing-value check.
+        if isinstance(text, str):
+            result = text
+        elif Normalizer._isMissing(text):
             return ""
-        result = str(text)
+        else:
+            result = str(text)
 
         # 1. Lowercasing. Done before spaCy, because the tagger often tags
         #    capitalized words as proper nouns, which the lemmatizer keeps
@@ -264,6 +269,34 @@ class Normalizer:
         if self.config.lower_case:
             result = result.lower()
         return result
+
+    @staticmethod
+    def _isMissing(value: object) -> bool:
+        """Tell whether a non-string input value stands for a missing value.
+
+        Missing are None, NaN of any float type (float, numpy.float32/64),
+        NaT (numpy.datetime64 and pandas) and pandas.NA.
+        """
+        if value is None:
+            return True
+
+        # pandas values only exist if pandas has been imported, so pandas is
+        # never imported here. If it is loaded, pandas.isna knows all of its
+        # own missing-value markers, including pandas.NA, which cannot be
+        # compared (bool(pandas.NA != pandas.NA) raises a TypeError). It is
+        # only asked about scalars, since it checks containers element-wise.
+        pandas = sys.modules.get("pandas")
+        if pandas is not None:
+            return bool(pandas.api.types.is_scalar(value) and pandas.isna(value))
+
+        # Without pandas: NaN and NaT are the only values that are not equal
+        # to themselves. Containers such as numpy arrays compare
+        # element-wise and cannot be turned into a single bool; they are not
+        # missing values.
+        try:
+            return bool(value != value)
+        except (TypeError, ValueError):
+            return False
 
     def _tokens(self, doc: Doc) -> set[str]:
         """Apply the configured token filters and transformations to a doc."""
