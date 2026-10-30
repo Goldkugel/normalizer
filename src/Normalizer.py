@@ -121,20 +121,20 @@ class Normalizer:
                 Logger.config = LoggerConfig()
         log = Logger()
 
-        log.log(f"Loading spacy model '{self.config.model_name}'...")
         # The named-entity recognizer and the dependency parser are not needed
         # for normalization, so they are not loaded, which saves loading and
         # processing time. The tagger stays, because the lemmatizer uses its
         # part-of-speech tags.
+        log.log(f"Loading spaCy model '{self.config.model_name}'...")
         self.nlp = spacy.load(self.config.model_name, exclude=["ner", "parser"])
-        log.log(f"Loading spacy model '{self.config.model_name}' completed.")
+        log.log(f"Loading spaCy model '{self.config.model_name}' completed.")
 
         # Initialize the stemmer only if stemming is enabled; otherwise the
         # `stemmer` attribute is not set and never used.
         if self.config.stemming:
-            log.log("Loading stemmer...")
+            log.log("Loading Porter stemmer...")
             self.stemmer = PorterStemmer()
-            log.log("Loading stemmer completed.")
+            log.log("Loading Porter stemmer completed.")
 
     @staticmethod
     def _resolveConfig(

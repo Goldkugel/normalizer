@@ -630,8 +630,13 @@ class TestLoggerConfiguration:
             "normalizer": {"stemming": True},
         })
         log_text = (tmp_path / "run.log").read_text()
-        assert "Loading spacy model 'en_core_sci_sm' completed." in log_text
-        assert "Loading stemmer completed." in log_text
+        lines = [line.split("] ", 1)[1] for line in log_text.splitlines()]
+        assert lines == [
+            "Loading spaCy model 'en_core_sci_sm'...",
+            "Loading spaCy model 'en_core_sci_sm' completed.",
+            "Loading Porter stemmer...",
+            "Loading Porter stemmer completed.",
+        ]
 
     def test_existing_logger_configuration_is_kept(self, tmp_path, standard_normalizer):
         other_config = tmp_path / "other.yaml"
