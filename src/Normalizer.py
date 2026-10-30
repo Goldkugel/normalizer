@@ -95,12 +95,16 @@ class Normalizer:
         # has a configuration (e.g. set by the calling pipeline), keep it; a
         # bare Logger() call does not reload. Sources without logger
         # settings leave the Logger to its own default path
-        # (./config/config.yaml).
+        # (./config/config.yaml) if that file exists, and to the LoggerConfig
+        # defaults otherwise, so the normalizer also works outside a project
+        # directory.
         if Logger.config is None and logger_path is not None:
             log = Logger(logger_path)
         else:
             if Logger.config is None and logger_settings is not None:
                 Logger.config = LoggerConfig.model_validate(logger_settings)
+            elif Logger.config is None and not os.path.isfile(standard_directory):
+                Logger.config = LoggerConfig()
             log = Logger()
 
         log.log(f"Loading spacy model '{self.config.model_name}'...")

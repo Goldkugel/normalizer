@@ -146,7 +146,7 @@ normalizer = Normalizer(NormalizerConfig(stemming=True))
 ## Known Limitations
 
 * **Stop words are not domain-specific.** `stop_word_removal` uses spaCy's general English stop word list, which also contains words that carry meaning in clinical terms, e.g. negation (`no`, `not`, `without`), location (`back`, `front`, `side`, `above`, `below`) and numbers (`first`, `two`). For example, *Back pain* normalizes to `{'pain'}`.
-* **Logger configuration.** The logger is a process-wide singleton, so only the first module that creates it decides its configuration. If `Normalizer` is created first and its configuration has no `logger` section (or is given as normalizer settings only or as a `NormalizerConfig`), the logger falls back to `./config/config.yaml` relative to the working directory.
+* **Logger configuration.** The logger is a process-wide singleton, so only the first module that creates it decides its configuration. If `Normalizer` is created first and its configuration has no `logger` section (or is given as normalizer settings only or as a `NormalizerConfig`), the logger falls back to `./config/config.yaml` relative to the working directory, or to its built-in defaults (logging to `./data/logs/output.log`) if that file does not exist.
 
 ---
 

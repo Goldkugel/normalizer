@@ -17,7 +17,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from logger import Logger
+from logger import Logger, LoggerConfig
 from normalizer import Normalizer, NormalizerConfig
 
 # --- Fixtures -------------------------------------------------------------
@@ -313,6 +313,32 @@ class TestLoggerConfiguration:
         })
         assert Logger.config.folder    == str(tmp_path) + "/"
         assert Logger.config.file_name == "dict.log"
+
+    def test_unconfigured_logger_uses_defaults_without_a_default_config_file(
+        self, tmp_path, monkeypatch, standard_config_path
+    ):
+        # A fresh process outside a project directory: no logger settings in
+        # the source and no ./config/config.yaml to fall back to
+        monkeypatch.chdir(tmp_path)
+        _reset_logger()
+        Normalizer(config=NormalizerConfig())
+        assert Logger.config == LoggerConfig()
+
+        # The default log folder is relative to the working directory; point
+        # the Logger back to the temporary test folder for later tests
+        Logger(standard_config_path)
+
+    def test_unconfigured_logger_falls_back_to_the_default_config_file(
+        self, tmp_path, monkeypatch
+    ):
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config" / "config.yaml").write_text(
+            f"logger:\n  folder: \"{tmp_path}/default_logs/\"\n"
+        )
+        monkeypatch.chdir(tmp_path)
+        _reset_logger()
+        Normalizer(config={"stemming": False})
+        assert Logger.config.folder == f"{tmp_path}/default_logs/"
 
     def test_existing_logger_configuration_is_kept(self, tmp_path, standard_normalizer):
         other_config = tmp_path / "other.yaml"

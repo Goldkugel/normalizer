@@ -32,4 +32,4 @@ All keys are optional — omitted keys fall back to the defaults above, and an e
 
 `Normalizer(config=path)` reads the YAML file at `path` (default: `./config/config.yaml`) and validates the `normalizer` key against `NormalizerConfig`; a file without a `normalizer` section raises a `KeyError`. Other top-level sections in the same file are ignored by `Normalizer`.
 
-If the logger has not been configured yet (by another module of the calling pipeline), `Normalizer` configures it from the `logger` section of the same file. An existing logger configuration is kept. If the file has no `logger` section and the logger is not configured yet, the logger falls back to its default `./config/config.yaml` relative to the working directory.
+If the logger has not been configured yet (by another module of the calling pipeline), `Normalizer` configures it from the `logger` section of the same file. An existing logger configuration is kept. If the file has no `logger` section and the logger is not configured yet, the logger falls back to its default `./config/config.yaml` relative to the working directory, or to its built-in defaults if that file does not exist.
