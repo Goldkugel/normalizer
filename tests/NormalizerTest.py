@@ -11,6 +11,7 @@ started from any directory.
 """
 
 import math
+import pathlib
 import sys
 import pytest
 import yaml
@@ -247,6 +248,48 @@ class TestConfigFlagToggles:
             Normalizer(config=str(config_path))
 
 
+class TestConfigSources:
+    """Normalizer(config=...) accepts a YAML path, a dict (the whole
+    configuration or just the normalizer section) or a NormalizerConfig."""
+
+    def test_accepts_a_path_object(self, standard_config_path):
+        normalizer = Normalizer(config=pathlib.Path(standard_config_path))
+        assert normalizer.config.stemming is True
+
+    def test_accepts_a_dict_of_normalizer_settings(self):
+        settings   = {"stemming": False, "lemmatizing": False, "lower_case": False}
+        normalizer = Normalizer(config=settings)
+        assert normalizer.config == NormalizerConfig(**settings)
+        assert normalizer.normalize("Kidneys") == {"Kidneys"}
+
+    def test_accepts_a_full_configuration_dict(self):
+        normalizer = Normalizer(config={
+            "logger"    : {"folder": "/should/not/be/used/"},
+            "normalizer": {"stemming": False},
+        })
+        assert normalizer.config == NormalizerConfig(stemming=False)
+
+    def test_empty_section_in_a_dict_falls_back_to_defaults(self):
+        assert Normalizer(config={"normalizer": None}).config == NormalizerConfig()
+
+    def test_rejects_unknown_keys_in_a_dict(self):
+        with pytest.raises(ValidationError):
+            Normalizer(config={"unknown_key": True})
+
+    def test_accepts_a_normalizer_config(self):
+        config     = NormalizerConfig(stemming=False)
+        normalizer = Normalizer(config=config)
+        assert normalizer.config == config
+
+        # Later changes to the passed object must not affect the normalizer.
+        config.lower_case = False
+        assert normalizer.config.lower_case is True
+
+    def test_missing_file_raises_file_not_found_error(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            Normalizer(config=str(tmp_path / "missing.yaml"))
+
+
 class TestLoggerConfiguration:
 
     def test_unconfigured_logger_is_configured_from_the_normalizer_config(
@@ -259,6 +302,17 @@ class TestLoggerConfiguration:
         with open(standard_config_path) as f:
             expected = yaml.safe_load(f)["logger"]["folder"]
         assert Logger.config.folder == expected
+
+    def test_unconfigured_logger_is_configured_from_a_full_configuration_dict(
+        self, tmp_path
+    ):
+        _reset_logger()
+        Normalizer(config={
+            "logger"    : {"folder": str(tmp_path) + "/", "file_name": "dict.log"},
+            "normalizer": {"stemming": False},
+        })
+        assert Logger.config.folder    == str(tmp_path) + "/"
+        assert Logger.config.file_name == "dict.log"
 
     def test_existing_logger_configuration_is_kept(self, tmp_path, standard_normalizer):
         other_config = tmp_path / "other.yaml"

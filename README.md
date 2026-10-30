@@ -119,14 +119,34 @@ print(normalizer.normalize_batch(["Kidney abnormalities", None]))
 # Output: [{'kidney', 'abnormality'}, set()]
 ```
 
-`Normalizer` logs through the shared `logger` package. If no other module has configured the logger yet, `Normalizer` configures it from the `logger` section of the same config file; otherwise the existing logger configuration is kept. With the shipped config, log messages are appended to `./data/logs/output.log` (the folder is created if missing).
+### Configuration sources
+
+Besides a YAML path, `Normalizer` accepts a dict or a `NormalizerConfig`:
+
+```python
+from normalizer import Normalizer, NormalizerConfig
+
+# From a YAML file (default: "./config/config.yaml" relative to the
+# working directory). A pathlib.Path works as well.
+normalizer = Normalizer("config/config.yaml")
+
+# From a dict: either the whole configuration (with "normalizer" and
+# optionally "logger" keys) or just the normalizer settings.
+normalizer = Normalizer({"normalizer": {"stemming": True}, "logger": {"folder": "./logs/"}})
+normalizer = Normalizer({"stemming": True})
+
+# From a NormalizerConfig (a copy is stored).
+normalizer = Normalizer(NormalizerConfig(stemming=True))
+```
+
+`Normalizer` logs through the shared `logger` package. If no other module has configured the logger yet, `Normalizer` configures it from the same source: the `logger` section of the config file, or the `logger` key of a full configuration dict; otherwise the existing logger configuration is kept. With the shipped config, log messages are appended to `./data/logs/output.log` (the folder is created if missing).
 
 ---
 
 ## Known Limitations
 
 * **Stop words are not domain-specific.** `stop_word_removal` uses spaCy's general English stop word list, which also contains words that carry meaning in clinical terms, e.g. negation (`no`, `not`, `without`), location (`back`, `front`, `side`, `above`, `below`) and numbers (`first`, `two`). For example, *Back pain* normalizes to `{'pain'}`.
-* **Logger configuration.** The logger is a process-wide singleton, so only the first module that creates it decides its configuration. If `Normalizer` is created first and its config file has no `logger` section, the logger falls back to `./config/config.yaml` relative to the working directory.
+* **Logger configuration.** The logger is a process-wide singleton, so only the first module that creates it decides its configuration. If `Normalizer` is created first and its configuration has no `logger` section (or is given as normalizer settings only or as a `NormalizerConfig`), the logger falls back to `./config/config.yaml` relative to the working directory.
 
 ---
 
