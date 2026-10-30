@@ -87,7 +87,7 @@ class Normalizer:
         pydantic.ValidationError
             If the settings contain an unknown key or an invalid value.
         """
-        self.config, logger_path, logger_settings = Normalizer._resolve_config(config)
+        self.config, logger_path, logger_settings = Normalizer._resolveConfig(config)
 
         # The Logger is a process-wide singleton. If it has not been
         # configured yet, configure it from the same source as the
@@ -118,7 +118,7 @@ class Normalizer:
             log.log("Loading stemmer completed.")
 
     @staticmethod
-    def _resolve_config(
+    def _resolveConfig(
         config: str | os.PathLike | dict | NormalizerConfig,
     ) -> tuple[NormalizerConfig, str | None, dict | None]:
         """
