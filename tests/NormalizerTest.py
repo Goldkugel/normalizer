@@ -711,7 +711,8 @@ class TestLoggerConfiguration:
             "normalizer": {"stemming": True},
         })
         log_text = (tmp_path / "run.log").read_text()
-        lines = [line.split("] ", 1)[1] for line in log_text.splitlines()]
+        # Each line reads "[<timestamp>] [<LEVEL>  ] <message>".
+        lines = [line.split("] ", 2)[2] for line in log_text.splitlines()]
         assert lines == [
             "Loading spaCy model 'en_core_sci_sm'...",
             "Loading spaCy model 'en_core_sci_sm' completed.",
