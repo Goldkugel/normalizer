@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "normalizer"
-version = "1.0.6"
+version = "1.1.0"
 requires-python = ">=3.9"
 # en_core_sci_sm 0.5.4 is built for spaCy 3.7; the upper bound also keeps pip
 # from building newer spaCy versions from source on Python 3.9.

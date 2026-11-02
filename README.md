@@ -55,7 +55,7 @@ Ensure you have **Python 3.9+** installed.
 All dependencies, including the `en_core_sci_sm` scispacy model, are declared in `pyproject.toml`:
 
 ```bash
-pip install "normalizer @ git+https://github.com/Goldkugel/normalizer.git@v1.0.6"
+pip install "normalizer @ git+https://github.com/Goldkugel/normalizer.git@v1.1.0"
 ```
 
 For development, install from a local checkout together with the test dependencies:
