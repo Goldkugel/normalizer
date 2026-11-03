@@ -49,7 +49,8 @@ class Normalizer:
     the remaining tokens are collected in a set (no order, no duplicates).
     """
 
-    # The validated "normalizer" section of the config file.
+    # The validated normalizer settings (the "normalizer" section of the
+    # config file, or the equivalent dict or NormalizerConfig).
     config: NormalizerConfig
 
     # The loaded spaCy pipeline.
@@ -108,8 +109,10 @@ class Normalizer:
         # covers logging:
         # - a "logger" section in the file or the full configuration dict:
         #   its settings are validated here and stored on the Logger class,
-        #   which is all Logger(path) would do (Logger v1.1.0 only accepts
-        #   file paths, not dicts);
+        #   which is what Logger(settings) would also do for a Logger without
+        #   a configuration (logger v1.4.0). Validating them directly also
+        #   rejects a section that is not a mapping (e.g. "logger: false")
+        #   with a ValidationError, where Logger() would take it for a path;
         # - no logger settings: Logger() loads its default path
         #   (./config/config.yaml) if that file exists; otherwise the
         #   LoggerConfig defaults are set, so the normalizer also works

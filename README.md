@@ -27,6 +27,7 @@ Built on top of [scispacy](https://allenai.github.io/scispacy/) and [spaCy](http
 │   └── README.md            # Documentation of the normalizer section
 ├── data/
 │   └── logs/                # Log files written by the logger
+│       └── README.md        # Documentation of the log folder
 ├── src/
 │   ├── __init__.py          # Package entry point (exposes Normalizer, NormalizerConfig)
 │   ├── NormalizerConfig.py  # Pydantic schema for config validation
@@ -37,7 +38,7 @@ Built on top of [scispacy](https://allenai.github.io/scispacy/) and [spaCy](http
 ├── .github/workflows/
 │   └── tests.yml            # CI: tests with coverage on Python 3.9, 3.11 and 3.12, ruff, mypy
 ├── LICENSE
-├── pyproject.toml           # Package metadata, dependencies, ruff and mypy settings
+├── pyproject.toml           # Package metadata, dependencies, pytest, ruff and mypy settings
 └── README.md
 
 ```
@@ -55,7 +56,7 @@ Ensure you have **Python 3.9+** installed.
 All dependencies, including the `en_core_sci_sm` scispacy model, are declared in `pyproject.toml`:
 
 ```bash
-pip install "normalizer @ git+https://github.com/Goldkugel/normalizer.git@v1.1.0"
+pip install "normalizer @ git+https://github.com/Goldkugel/normalizer.git@v1.1.1"
 ```
 
 For development, install from a local checkout together with the test dependencies:
