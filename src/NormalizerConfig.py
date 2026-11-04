@@ -10,49 +10,38 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 class NormalizerConfig(BaseModel):
     """Pydantic model defining and validating the "normalizer" config section.
 
-    Instances control which pipeline components (lowercasing, lemmatization,
-    stemming, stopword removal) are active and specify the underlying NLP
-    model to use. Every field has a default, so all keys are optional.
+    Selects the spaCy model and the active steps (lowercasing,
+    lemmatization, stemming, stopword removal). All keys are optional.
     Instances are read-only; use model_copy(update={...}) for a variant.
     """
 
-    # Reject any keys in the input data that aren't explicitly defined below.
-    # This catches typos or outdated config keys early, instead of silently
-    # ignoring them. Frozen, because the Normalizer loads the model and the
-    # stemmer once from these settings: changing them afterwards would have
-    # no effect (model_name) or break normalize() (stemming), so assigning a
-    # field raises a ValidationError instead.
+    # extra="forbid" catches typos and outdated keys. Frozen, because the
+    # model and stemmer are loaded once: a later change would have no effect
+    # (model_name) or break normalize() (stemming).
     model_config            = ConfigDict(extra="forbid", frozen=True)
 
-    # The spaCy / scispacy model name to load for tokenization and lemmatization.
-    # The model must be installed as a Python package; only the default,
-    # en_core_sci_sm, is a dependency of this package (see pyproject.toml).
+    # spaCy / scispacy model; must be installed. Only the default is a
+    # dependency of this package (see pyproject.toml).
     model_name: str         = "en_core_sci_sm"
 
-    # Convert all input text to lowercase before further processing. Also
-    # keeps the Porter stemmer from lowercasing when set to False.
+    # Also keeps the Porter stemmer from lowercasing when False.
     lower_case: bool        = True
 
-    # Apply POS-guided lemmatization to reduce words to their base/dictionary form.
+    # POS-guided lemmatization.
     lemmatizing: bool       = True
 
-    # Apply NLTK Porter stemming to reduce words to their root form, on top of
-    # the lemma (or the raw token). Disabled by default: stems such as "abnorm"
-    # or "sever" merge more word forms, but also unrelated words.
+    # NLTK Porter stemming on top of the lemma (or raw token). Off by
+    # default: stems such as "abnorm" or "sever" also merge unrelated words.
     stemming: bool          = False
 
-    # Drop tokens that are on spaCy's general English stop word list. Note that
-    # this list is not domain-specific and includes words that can matter in
+    # spaCy's general English list, which includes words that matter in
     # clinical terms, such as "no", "not", "without" and "back".
     stop_word_removal: bool = True
 
-    # Adjust spaCy's stop word list; only used if stop_word_removal is True.
-    # keep_stop_words are never removed (e.g. "no", "not", "without", "back"),
-    # extra_stop_words are removed in addition (e.g. filler words of ontology
-    # labels). A token matches an entry if its text or its lemma does,
-    # ignoring the casing, so "Back" matches "back" and "abnormalities"
-    # matches "abnormality". Stored as frozensets, which keeps the settings
-    # read-only and the lookups fast; YAML lists are converted.
+    # Adjust the stop word list (only with stop_word_removal): keep_stop_words
+    # are never removed, extra_stop_words in addition. Entries match a
+    # token's text or lemma, ignoring case. Frozensets keep the settings
+    # read-only; YAML lists are converted.
     keep_stop_words: frozenset[str]  = frozenset()
     extra_stop_words: frozenset[str] = frozenset()
 

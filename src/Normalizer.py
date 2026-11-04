@@ -1,11 +1,10 @@
 """
 Lexical normalizer for biomedical terms.
 
-Provides the Normalizer class, which turns a term such as "Abnormality of
-the kidney" into an unordered set of normalized tokens ({"abnormality",
-"kidney"}). Two terms with equal (or overlapping) token sets can then be
-matched regardless of word order, inflection or filler words, e.g. when
-aligning HPO labels with SNOMED CT descriptions.
+The Normalizer turns a term such as "Abnormality of the kidney" into a set
+of normalized tokens ({"abnormality", "kidney"}), so that terms can be
+matched regardless of word order, inflection or filler words, e.g. HPO
+labels with SNOMED CT descriptions.
 """
 
 from __future__ import annotations
@@ -27,8 +26,7 @@ configuration_section: str  = "normalizer"
 # Key of the logger settings in the same file (see the logger package).
 logger_section: str         = "logger"
 
-# Default path to the config file, used if no config is passed in. It is also
-# the Logger's own default path, which it loads if it is not configured yet.
+# Default config file; also the Logger's own default path.
 standard_directory: str     = "./config/config.yaml"
 
 class Normalizer:
@@ -37,8 +35,7 @@ class Normalizer:
     Uses spaCy / scispacy for biomedical tokenization, stopword removal,
     and POS-guided lemmatization, with optional NLTK stemming support.
 
-    Every input goes through the same steps, each of which can be switched
-    on or off in the config:
+    Every input goes through these steps, each switchable in the config:
 
     1. Lowercasing                       (_prepare)
     2. Stopword removal                  (_tokens)
@@ -49,11 +46,8 @@ class Normalizer:
     the remaining tokens are collected in a set (no order, no duplicates).
     """
 
-    # The validated normalizer settings (the "normalizer" section of the
-    # config file, or the equivalent dict or NormalizerConfig).
     config: NormalizerConfig
 
-    # The loaded spaCy pipeline.
     nlp: Language
 
     # Only set when stemming is enabled.
@@ -102,21 +96,12 @@ class Normalizer:
         """
         self.config, logger_settings = Normalizer._resolveConfig(config)
 
-        # The Logger is a process-wide singleton. If it already has a
-        # configuration (e.g. set by the calling pipeline), it is kept: a
-        # bare Logger() call does not reload. Otherwise it is configured
-        # from the same source as the normalizer, so a custom config also
-        # covers logging:
-        # - a "logger" section in the file or the full configuration dict:
-        #   its settings are validated here and stored on the Logger class,
-        #   which is what Logger(settings) would also do for a Logger without
-        #   a configuration (logger v1.4.0). Validating them directly also
-        #   rejects a section that is not a mapping (e.g. "logger: false")
-        #   with a ValidationError, where Logger() would take it for a path;
-        # - no logger settings: Logger() loads its default path
-        #   (./config/config.yaml) if that file exists; otherwise the
-        #   LoggerConfig defaults are set, so the normalizer also works
-        #   outside a project directory.
+        # A Logger configured by the caller is kept (see the docstring).
+        # Setting Logger.config directly is what Logger(settings) does for an
+        # unconfigured Logger, but it also rejects a section that is not a
+        # mapping (e.g. "logger: false") with a ValidationError, where
+        # Logger() would take it for a path. The LoggerConfig defaults let
+        # the normalizer work outside a project directory.
         if Logger.config is None:
             if logger_settings is not None:
                 Logger.config = LoggerConfig.model_validate(logger_settings)
@@ -124,16 +109,12 @@ class Normalizer:
                 Logger.config = LoggerConfig()
         log = Logger()
 
-        # The named-entity recognizer and the dependency parser are not needed
-        # for normalization, so they are not loaded, which saves loading and
-        # processing time. The tagger stays, because the lemmatizer uses its
-        # part-of-speech tags.
+        # NER and parser are not needed; the tagger stays, because the
+        # lemmatizer uses its part-of-speech tags.
         log.log(f"Loading spaCy model '{self.config.model_name}'...")
         self.nlp = spacy.load(self.config.model_name, exclude=["ner", "parser"])
         log.log(f"Loading spaCy model '{self.config.model_name}' completed.")
 
-        # Initialize the stemmer only if stemming is enabled; otherwise the
-        # `stemmer` attribute is not set and never used.
         if self.config.stemming:
             log.log("Loading Porter stemmer...")
             self.stemmer = PorterStemmer()
@@ -146,19 +127,17 @@ class Normalizer:
         """
         Turn the `config` argument of __init__ into a NormalizerConfig.
 
-        Returns the NormalizerConfig and the "logger" section of the file or
-        full configuration dict, so __init__ can configure the Logger from
-        the same source. The section is None if the source has none, and {}
-        if it is empty; anything else is left to LoggerConfig to validate.
+        Also returns the "logger" section of a file or full configuration
+        dict, for __init__ to configure the Logger: None if there is none,
+        {} if it is empty, anything else as is for LoggerConfig to validate.
         """
         # NormalizerConfig is frozen, so it can be used without a copy.
         if isinstance(config, NormalizerConfig):
             return config, None
 
         if isinstance(config, dict):
-            # A full configuration (the parsed YAML file) has a "normalizer"
-            # key, which is not a valid normalizer setting itself, so the
-            # two kinds of dict cannot be confused.
+            # "normalizer" is not a normalizer setting itself, so a full
+            # configuration and bare settings cannot be confused.
             if configuration_section in config:
                 return Normalizer._fromSections(config)
             return NormalizerConfig.model_validate(config), None
@@ -167,8 +146,7 @@ class Normalizer:
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
-        # An empty file is parsed as None, a file of plain text as a str and
-        # a YAML list as a list; none of them has sections to read.
+        # An empty file is parsed as None, plain text as a str.
         if not isinstance(data, dict) or configuration_section not in data:
             raise KeyError(
                 f"Config file '{path}' has no '{configuration_section}' section."
@@ -180,10 +158,9 @@ class Normalizer:
         """
         Read the "normalizer" and "logger" sections of a full configuration.
 
-        An empty section ("normalizer:" with no keys, parsed as None) means
-        "use all defaults". Only None is replaced: other values that are not
-        a mapping, such as false or a list, are passed on, so validation
-        rejects them instead of silently falling back to the defaults.
+        An empty section (parsed as None) means "use all defaults". Other
+        non-mappings, such as false or a list, are passed on, so validation
+        rejects them instead of silently using the defaults.
         """
         section = data[configuration_section]
         settings = NormalizerConfig.model_validate({} if section is None else section)
@@ -202,8 +179,8 @@ class Normalizer:
         """
         Normalize many terms at once using spaCy's batched pipeline.
 
-        Gives the same result as calling normalize() on every element, but is
-        much faster for large term lists.
+        Same result as normalize() on every element, but much faster for
+        large term lists.
 
         Parameters
         ----------
@@ -231,7 +208,7 @@ class Normalizer:
             If `batch_size` is smaller than 1 (spaCy would silently return
             no results for 0), or `n_process` is neither -1 nor at least 1.
         """
-        # Checked here, because spaCy gives no or only cryptic errors.
+        # spaCy gives no or only cryptic errors for these.
         if isinstance(texts, str):
             raise TypeError(
                 "normalize_batch() expects an iterable of terms, not a single "
@@ -242,10 +219,8 @@ class Normalizer:
         if n_process != -1 and n_process < 1:
             raise ValueError(f"n_process must be -1 or at least 1, not {n_process}.")
 
-        # The generator prepares each term only when spaCy reads it, so the
-        # input is not copied. Unlike normalize(), empty strings are not
-        # skipped here: spaCy has to yield one doc per input to keep the
-        # results in input order, and an empty doc gives an empty set.
+        # Unlike normalize(), empty strings are not skipped: one doc per
+        # input keeps the results in input order.
         docs = self.nlp.pipe(
             (self._prepare(t) for t in texts),
             batch_size=batch_size,
@@ -272,7 +247,6 @@ class Normalizer:
         """
         prepared = self._prepare(text)
 
-        # Nothing to tokenize; skip the spaCy call.
         if not prepared:
             return set()
         return self._tokens(self.nlp(prepared))
@@ -292,10 +266,9 @@ class Normalizer:
         else:
             result = str(text)
 
-        # 1. Lowercasing. Done before spaCy, because the tagger often tags
+        # 1. Lowercasing, before spaCy, because the tagger often tags
         #    capitalized words as proper nouns, which the lemmatizer keeps
-        #    unchanged ("Kidneys" stays "Kidneys", "kidneys" becomes
-        #    "kidney"). Stop word lookup ignores the casing either way.
+        #    unchanged ("Kidneys" stays "Kidneys", "kidneys" -> "kidney").
         if self.config.lower_case:
             result = result.lower()
         return result
@@ -310,19 +283,16 @@ class Normalizer:
         if value is None:
             return True
 
-        # pandas values only exist if pandas has been imported, so pandas is
-        # never imported here. If it is loaded, pandas.isna knows all of its
-        # own missing-value markers, including pandas.NA, which cannot be
-        # compared (bool(pandas.NA != pandas.NA) raises a TypeError). It is
-        # only asked about scalars, since it checks containers element-wise.
+        # pandas values only exist if pandas is imported, so it is never
+        # imported here. pandas.isna also knows pandas.NA, which cannot be
+        # compared (bool(NA != NA) raises); containers are checked
+        # element-wise, so only scalars are passed.
         pandas = sys.modules.get("pandas")
         if pandas is not None:
             return bool(pandas.api.types.is_scalar(value) and pandas.isna(value))
 
-        # Without pandas: NaN and NaT are the only values that are not equal
-        # to themselves. Containers such as numpy arrays compare
-        # element-wise and cannot be turned into a single bool; they are not
-        # missing values.
+        # NaN and NaT are the only values not equal to themselves. Arrays
+        # compare element-wise and raise; they are not missing values.
         try:
             return bool(value != value)
         except (TypeError, ValueError):
@@ -331,10 +301,9 @@ class Normalizer:
     def _isStopWord(self, token: Token) -> bool:
         """Tell whether a token is removed as a stop word.
 
-        A token is matched against keep_stop_words and extra_stop_words by
-        its lowercase text and lemma, so the lists work regardless of the
-        input casing and of the word form ("abnormalities" matches
-        "abnormality", "n't" matches "not").
+        keep_stop_words and extra_stop_words match the lowercase text or
+        lemma, so casing and word form do not matter ("abnormalities"
+        matches "abnormality", "n't" matches "not").
         """
         forms = {token.lower_, token.lemma_.lower()}
         if forms & self.config.keep_stop_words:
@@ -346,28 +315,24 @@ class Normalizer:
         tokens: set[str] = set()
 
         for token in doc:
-            # Skip punctuation and whitespace tokens
             if token.is_punct or token.is_space:
                 continue
 
-            # Keep letters and digits, including single characters ('c' in
-            # "Hepatitis C", '1' in "Type 1 diabetes"), but drop leftover
-            # symbol tokens such as '+' or '%'
+            # Keeps single characters ('c' in "Hepatitis C", '1' in "Type 1
+            # diabetes"), drops symbol tokens such as '+' or '%'
             if not any(c.isalnum() for c in token.text):
                 continue
 
-            # 2. Stopword Removal (spaCy's general English stop word list,
-            #    which also contains words such as "no", "not" and "back",
-            #    adjusted by keep_stop_words and extra_stop_words)
+            # 2. Stopword removal (spaCy's English list, adjusted by
+            #    keep_stop_words and extra_stop_words)
             if self.config.stop_word_removal and self._isStopWord(token):
                 continue
 
-            # 3. Lemmatization: the POS-guided lemma, or the token text as is
+            # 3. Lemmatization
             token_str = token.lemma_ if self.config.lemmatizing else token.text
 
-            # 4. Stemming, applied to the result of step 3. PorterStemmer
-            #    lowercases by default; to_lowercase keeps the configured
-            #    casing when lower_case is False.
+            # 4. Stemming. PorterStemmer lowercases by default; to_lowercase
+            #    keeps the casing when lower_case is False.
             if self.config.stemming:
                 token_str = self.stemmer.stem(
                     token_str, to_lowercase=self.config.lower_case
