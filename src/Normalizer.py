@@ -20,7 +20,7 @@ import spacy
 import sys
 import yaml
 
-# Key under which normalizer settings are expected to live in the YAML config file.
+# Key of the normalizer settings in the YAML config file.
 configuration_section: str  = "normalizer"
 
 # Key of the logger settings in the same file (see the logger package).
@@ -97,11 +97,11 @@ class Normalizer:
         self.config, logger_settings = Normalizer._resolveConfig(config)
 
         # A Logger configured by the caller is kept (see the docstring).
-        # Setting Logger.config directly is what Logger(settings) does for an
-        # unconfigured Logger, but it also rejects a section that is not a
-        # mapping (e.g. "logger: false") with a ValidationError, where
-        # Logger() would take it for a path. The LoggerConfig defaults let
-        # the normalizer work outside a project directory.
+        # LoggerConfig.model_validate() rather than Logger(settings): it
+        # rejects a section that is not a mapping (e.g. "logger: false")
+        # with a ValidationError, where Logger() would take a string for a
+        # path. The defaults let the normalizer work outside a project
+        # directory.
         if Logger.config is None:
             if logger_settings is not None:
                 Logger.config = LoggerConfig.model_validate(logger_settings)
@@ -319,12 +319,12 @@ class Normalizer:
                 continue
 
             # Keeps single characters ('c' in "Hepatitis C", '1' in "Type 1
-            # diabetes"), drops symbol tokens such as '+' or '%'
+            # diabetes"), drops symbol tokens such as '+' or '%'.
             if not any(c.isalnum() for c in token.text):
                 continue
 
             # 2. Stopword removal (spaCy's English list, adjusted by
-            #    keep_stop_words and extra_stop_words)
+            #    keep_stop_words and extra_stop_words).
             if self.config.stop_word_removal and self._isStopWord(token):
                 continue
 

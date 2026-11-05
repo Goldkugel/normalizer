@@ -52,12 +52,9 @@ def standard_config_path(tmp_path_factory):
     and returns its path.
 
     The Logger is reset and configured from this file, so test logs end up
-    in the temporary folder instead of the repository, whichever test runs
-    first.
-
-    Unlike the shipped config/config.yaml, the test config enables stemming,
-    so the shared normalizer exercises every pipeline step at once. Tests that
-    need other settings write their own file (see TestConfigFlagToggles).
+    in the temporary folder, whichever test runs first. Unlike the shipped
+    config/config.yaml, it enables stemming, so the shared normalizer
+    exercises every pipeline step.
     """
     tmp_dir = tmp_path_factory.mktemp("config")
     config_data = {
@@ -93,6 +90,7 @@ def standard_normalizer(standard_config_path):
 
 # --- Test Classes ---------------------------------------------------------
 class TestNormalizerConfig:
+    """Defaults and validation of NormalizerConfig."""
 
     def test_config_initializes_with_expected_defaults(self):
         config = NormalizerConfig()
@@ -157,8 +155,8 @@ class TestShippedConfig:
         LoggerConfig.model_validate(data["logger"])
 
 
-# All tests in this class use the shared normalizer, i.e. with stemming.
 class TestDefaultPipelineBehavior:
+    """The full pipeline, via the shared normalizer (i.e. with stemming)."""
 
     def test_normalizes_standard_medical_text(self, standard_normalizer):
         input_text = "Severe abnormalities of the kidneys"
@@ -277,6 +275,7 @@ def stop_word_normalizer(standard_config_path):
 
 
 class TestStopWordLists:
+    """keep_stop_words and extra_stop_words."""
 
     def test_keeps_listed_stop_words(self, stop_word_normalizer):
         assert stop_word_normalizer.normalize("No fever") == {"no", "fever"}
@@ -324,6 +323,7 @@ class TestStopWordLists:
 
 
 class TestBatchNormalization:
+    """normalize_batch(): same results as normalize(), argument checks."""
 
     def test_batch_matches_single_normalization(self, standard_normalizer):
         texts = [
@@ -396,6 +396,7 @@ class TestBatchNormalization:
 
 
 class TestModelLoading:
+    """Which spaCy components and whether the stemmer are loaded."""
 
     def test_unused_pipeline_components_are_not_loaded(self, standard_normalizer):
         # The tagger and the lemmatizer are needed; the parser and the
@@ -416,6 +417,7 @@ class TestModelLoading:
 
 
 class TestConfigFlagToggles:
+    """Config files that switch pipeline steps off or lack a section."""
 
     def _create_custom_config(self, tmp_path, overrides: dict) -> str:
         """Writes a normalizer config with all steps enabled, changed by
@@ -583,6 +585,7 @@ class TestConfigSources:
 
 
 class TestLoggerConfiguration:
+    """How the Normalizer configures the Logger, or keeps its configuration."""
 
     def test_unconfigured_logger_is_configured_from_the_normalizer_config(
         self, standard_config_path
@@ -711,7 +714,7 @@ class TestLoggerConfiguration:
             "normalizer": {"stemming": True},
         })
         log_text = (tmp_path / "run.log").read_text()
-        # Each line reads "[<timestamp>] [<LEVEL>  ] <message>".
+        # Each line reads "[<timestamp>] [<LEVEL>] <message>" (no runtime).
         lines = [line.split("] ", 2)[2] for line in log_text.splitlines()]
         assert lines == [
             "Loading spaCy model 'en_core_sci_sm'...",
@@ -731,6 +734,7 @@ class TestLoggerConfiguration:
 
 
 class TestPackage:
+    """Exports of the normalizer package."""
 
     def test_exports(self):
         assert normalizer_package.__all__ == ["Normalizer", "NormalizerConfig"]
@@ -739,6 +743,7 @@ class TestPackage:
 
 
 class TestOntologyMatchingAlignment:
+    """The intended use: HPO labels match SNOMED CT descriptions."""
 
     def test_hpo_and_snomed_terms_normalize_to_equivalent_token_sets(
         self, standard_normalizer
