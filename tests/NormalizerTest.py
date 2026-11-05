@@ -416,6 +416,47 @@ class TestModelLoading:
             Normalizer(config={"model_name": "no_such_spacy_model"})
 
 
+@pytest.fixture(scope="module")
+def blank_model(tmp_path_factory):
+    """Path of a spaCy model with a tokenizer only (spacy.blank)."""
+    import spacy
+    path = tmp_path_factory.mktemp("models") / "en_blank"
+    spacy.blank("en").to_disk(path)
+    return str(path)
+
+
+class TestModelWithoutLemmatizer:
+    """
+    A model without a lemmatizer gives every token the lemma "", which must
+    not turn every term into {""} (all terms would then match each other).
+    """
+
+    def test_tokens_keep_their_text(self, blank_model):
+        normalizer = Normalizer(config={"model_name": blank_model})
+        assert normalizer.normalize("Abnormality of the kidney") == {"abnormality", "kidney"}
+        assert normalizer.normalize_batch(["Seizure", "Kidney"]) == [{"seizure"}, {"kidney"}]
+
+    def test_missing_lemmatizer_is_a_warning(self, blank_model, monkeypatch):
+        logged = []
+        monkeypatch.setattr(
+            Logger, "log",
+            lambda self, message, cmdline=True, level="info": logged.append((message, level)),
+        )
+        Normalizer(config={"model_name": blank_model})
+        assert any(
+            level == "warning" and "has no lemmatizer" in message for message, level in logged
+        )
+
+    def test_no_warning_without_lemmatizing(self, blank_model, monkeypatch):
+        logged = []
+        monkeypatch.setattr(
+            Logger, "log",
+            lambda self, message, cmdline=True, level="info": logged.append((message, level)),
+        )
+        Normalizer(config={"model_name": blank_model, "lemmatizing": False})
+        assert not any("lemmatizer" in message for message, _ in logged)
+
+
 class TestConfigFlagToggles:
     """Config files that switch pipeline steps off or lack a section."""
 

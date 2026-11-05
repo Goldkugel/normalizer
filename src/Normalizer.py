@@ -115,6 +115,15 @@ class Normalizer:
         self.nlp = spacy.load(self.config.model_name, exclude=["ner", "parser"])
         log.log(f"Loading spaCy model '{self.config.model_name}' completed.")
 
+        # Without a lemmatizer every lemma is "", so the tokens are kept as
+        # they are (see _tokens()).
+        if self.config.lemmatizing and "lemmatizer" not in self.nlp.pipe_names:
+            log.log(
+                f"spaCy model '{self.config.model_name}' has no lemmatizer; "
+                f"tokens are not lemmatized.",
+                level="warning",
+            )
+
         if self.config.stemming:
             log.log("Loading Porter stemmer...")
             self.stemmer = PorterStemmer()
@@ -328,8 +337,9 @@ class Normalizer:
             if self.config.stop_word_removal and self._isStopWord(token):
                 continue
 
-            # 3. Lemmatization
-            token_str = token.lemma_ if self.config.lemmatizing else token.text
+            # 3. Lemmatization. A token without a lemma (a model without a
+            #    lemmatizer) keeps its text; "" would make all terms match.
+            token_str = (token.lemma_ or token.text) if self.config.lemmatizing else token.text
 
             # 4. Stemming. PorterStemmer lowercases by default; to_lowercase
             #    keeps the casing when lower_case is False.

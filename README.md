@@ -86,7 +86,7 @@ normalizer:
 
 | Parameter | Type | Default | Description |
 | --- | --- | --- | --- |
-| `model_name` | `str` | `"en_core_sci_sm"` | spaCy/scispacy model to load for tokenization & lemmatization. |
+| `model_name` | `str` | `"en_core_sci_sm"` | spaCy/scispacy model to load for tokenization & lemmatization. A model without a lemmatizer keeps the tokens' text (with a warning if `lemmatizing` is on). |
 | `lower_case` | `bool` | `True` | Convert all input text to lower case before tokenization (capitalized words are otherwise often tagged as proper nouns and not lemmatized). |
 | `lemmatizing` | `bool` | `True` | Apply POS-guided lemmatization to base form. |
 | `stemming` | `bool` | `False` | Apply NLTK Porter Stemmer to tokens (respects `lower_case`). |
